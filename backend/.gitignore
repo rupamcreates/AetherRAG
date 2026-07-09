@@ -1,0 +1,35 @@
+# Python-generated files
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+
+# Virtual environments
+.venv
+
+# Local Environment Secrets
+.env
+.env.local
+.env.development
+.env.production
+*.env
+
+# Python Virtual Environments & Cache
+backend/.venv/
+backend/__pycache__/
+backend/*.pyc
+backend/.pytest_cache/
+backend/storage/
+
+# Node/Next.js dependencies and builds
+frontend/node_modules/
+frontend/.next/
+frontend/out/
+frontend/build/
+frontend/.env.local
+
+# Operating System Files
+.DS_Store
+Thumbs.db
