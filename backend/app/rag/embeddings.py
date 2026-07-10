@@ -15,7 +15,7 @@ class HuggingFaceInferenceEmbeddings(Embeddings):
     def __init__(self, model_name: str = None, api_key: str = None):
         self.model_name = model_name or settings.EMBEDDING_MODEL_NAME
         self.api_key = api_key or settings.HUGGINGFACE_API_KEY
-        self.api_url = f"https://api-inference.huggingface.co/pipeline/feature-extraction/{self.model_name}"
+        self.api_url = f"https://router.huggingface.co/hf-inference/models/{self.model_name}"
         
         if not self.api_key:
             logger.warning("HUGGINGFACE_API_KEY is not set. Hugging Face Inference API calls will fail.")
