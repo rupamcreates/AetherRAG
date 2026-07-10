@@ -31,4 +31,7 @@ dependencies = [
     "tabulate>=0.10.0",
     "unstructured-client>=0.45.0",
     "uvicorn>=0.51.0",
+    "boto3>=1.34.0",
+    "fastembed>=0.2.0",
+    "pypdf>=4.0.0",
 ]

@@ -2,7 +2,6 @@ import logging
 from typing import List, Dict, Any
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_experimental.text_splitter import SemanticChunker
-from app.rag.embeddings import HuggingFaceInferenceEmbeddings
 
 logger = logging.getLogger(__name__)
 
@@ -11,7 +10,7 @@ class DocumentChunker:
         self.chunk_size = chunk_size
         self.chunk_overlap = chunk_overlap
         self.use_semantic = use_semantic
-        self.embeddings = HuggingFaceInferenceEmbeddings()
+        self.embeddings = None
 
         # Initialize splitters
         self.recursive_splitter = RecursiveCharacterTextSplitter(
@@ -21,13 +20,22 @@ class DocumentChunker:
             separators=["\n\n", "\n", " ", ""]
         )
         
+        self.semantic_splitter = None
         if self.use_semantic:
-            self.semantic_splitter = SemanticChunker(
-                self.embeddings,
-                breakpoint_threshold_type="percentile"
-            )
-        else:
-            self.semantic_splitter = None
+            try:
+                # Use local fastembed embeddings for offline-capable semantic chunking
+                from langchain_community.embeddings.fastembed import FastEmbedEmbeddings
+                self.embeddings = FastEmbedEmbeddings(model_name="BAAI/bge-small-en-v1.5")
+                self.semantic_splitter = SemanticChunker(
+                    self.embeddings,
+                    breakpoint_threshold_type="percentile"
+                )
+                logger.info("Initialized local FastEmbedEmbeddings for semantic chunking.")
+            except Exception as e:
+                logger.warning(
+                    f"Failed to initialize local FastEmbedEmbeddings ({e}). "
+                    "Semantic chunking will fall back to recursive character splitting."
+                )
 
     def chunk_document(self, parsed_elements: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         """

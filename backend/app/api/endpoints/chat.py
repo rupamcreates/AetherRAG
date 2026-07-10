@@ -144,11 +144,43 @@ async def query_rag(
                 meta = chunk.get("metadata", {})
                 source_name = meta.get("source", "Unknown")
                 page_num = meta.get("page_number", 1)
+                storage_path = meta.get("storage_path", source_name)
                 cite_key = f"{source_name}_Page{page_num}"
+                
+                # Dynamic presigned download link generation for Cloudflare R2
+                download_url = None
+                provider = settings.STORAGE_PROVIDER.lower()
+                if provider in ("r2", "s3") and settings.CLOUDFLARE_ACCOUNT_ID and settings.R2_ACCESS_KEY_ID:
+                    try:
+                        import boto3
+                        from botocore.config import Config
+                        
+                        endpoint_url = f"https://{settings.CLOUDFLARE_ACCOUNT_ID}.r2.cloudflarestorage.com"
+                        s3_client = boto3.client(
+                            "s3",
+                            endpoint_url=endpoint_url,
+                            aws_access_key_id=settings.R2_ACCESS_KEY_ID or settings.AWS_ACCESS_KEY_ID,
+                            aws_secret_access_key=settings.R2_SECRET_ACCESS_KEY or settings.AWS_SECRET_ACCESS_KEY,
+                            config=Config(signature_version="s3v4"),
+                            region_name="us-east-1"
+                        )
+                        bucket = settings.R2_BUCKET_NAME or settings.STORAGE_BUCKET_NAME
+                        download_url = s3_client.generate_presigned_url(
+                            ClientMethod="get_object",
+                            Params={
+                                "Bucket": bucket,
+                                "Key": storage_path
+                            },
+                            ExpiresIn=3600
+                        )
+                    except Exception as s3_err:
+                        logger.warning(f"Failed to generate R2 download URL for citation: {s3_err}")
+                
                 citations_map[cite_key] = {
                     "source": source_name,
                     "page_number": page_num,
-                    "content_preview": chunk["content"][:200] + "..."
+                    "content_preview": chunk["content"][:200] + "...",
+                    "download_url": download_url
                 }
                 context_str += f"--- START CHUNK {idx+1} [Citation Key: {cite_key}] ---\n"
                 context_str += f"{chunk['content']}\n"

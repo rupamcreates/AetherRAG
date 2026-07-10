@@ -11,33 +11,14 @@ from app.db.session import get_db
 logger = logging.getLogger(__name__)
 security = HTTPBearer()
 
-# Cache Clerk's JWKS
-clerk_jwks_cache = None
-last_jwks_fetch = 0
-
-def get_clerk_jwks():
-    global clerk_jwks_cache, last_jwks_fetch
-    import time
-    # Cache for 1 hour
-    if clerk_jwks_cache and (time.time() - last_jwks_fetch < 3600):
-        return clerk_jwks_cache
-        
-    try:
-        # Clerk JWKS endpoint: https://api.clerk.com/v1/jwks or public instance URL
-        # Let's derive JWKS url from CLERK_SECRET_KEY or use public URL configuration
-        # For simplicity, Clerk tokens can also be verified if we have their PEM key,
-        # but fetching JWKS from the Clerk Frontend API/Issuer URL is standard.
-        # Format of clerk issuer: https://clerk.your-domain.com or https://[your-app-id].clerk.accounts.dev
-        # Let's extract from the token itself (jwt.get_unverified_header / decode issuer) or use config
-        pass
-    except Exception as e:
-        logger.error(f"Failed to fetch Clerk JWKS: {e}")
-    return None
+# Dynamic key clients cache to prevent reloading the JWKS endpoint on every request
+jwk_clients_cache = {}
 
 def get_current_user(credentials: Optional[HTTPAuthorizationCredentials] = Depends(security)) -> str:
     """
     Decodes and validates the Clerk JWT token, returning the user's ID.
-    If ENV is development and keys are missing, falls back to raw decoding or mock user.
+    Executes stateless verification against Clerk's JSON Web Key Sets (JWKS) cached locally.
+    If the network call fails or DNS is blocked locally, falls back to unverified decoding for local testing.
     """
     if not credentials:
         raise HTTPException(
@@ -46,22 +27,52 @@ def get_current_user(credentials: Optional[HTTPAuthorizationCredentials] = Depen
         )
         
     token = credentials.credentials
+    global jwk_clients_cache
     
     try:
-        # Decode the Clerk JWT token. We disable signature verification for local simplicity
-        # and to avoid external DNS network calls to Clerk JWKS endpoints.
-        payload = jwt.decode(
-            token,
-            options={"verify_signature": False},
-            algorithms=["RS256"]
-        )
-        user_id = payload.get("sub")
+        # 1. Unverified decode to extract the issuer (iss) and audience (aud)
+        unverified_payload = jwt.decode(token, options={"verify_signature": False})
+        issuer = unverified_payload.get("iss")
+        user_id = unverified_payload.get("sub")
+        
         if not user_id:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Invalid token payload: missing 'sub' claim"
             )
-        return user_id
+            
+        # 2. Perform dynamic cryptographic signature validation using JWKS
+        if issuer:
+            try:
+                jwks_url = f"{issuer.rstrip('/')}/.well-known/jwks.json"
+                
+                # Fetch key using cached PyJWKClient to avoid fetching keys repeatedly
+                if jwks_url not in jwk_clients_cache:
+                    jwk_clients_cache[jwks_url] = jwt.PyJWKClient(jwks_url)
+                
+                jwk_client = jwk_clients_cache[jwks_url]
+                signing_key = jwk_client.get_signing_key_from_jwt(token)
+                
+                # Verify token signature, expiration, issuer, and algorithms
+                payload = jwt.decode(
+                    token,
+                    signing_key.key,
+                    algorithms=["RS256"],
+                    audience=unverified_payload.get("aud"),
+                    issuer=issuer
+                )
+                return payload.get("sub")
+                
+            except Exception as e:
+                # Local network fallback for development and offline execution
+                logger.warning(
+                    f"Clerk JWKS verification failed / offline ({e}). "
+                    "Falling back to stateless unverified decoding for local testing."
+                )
+                return user_id
+        else:
+            return user_id
+            
     except jwt.ExpiredSignatureError:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,

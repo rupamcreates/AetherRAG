@@ -32,21 +32,76 @@ export default function DocumentUploader({ onUploadSuccess }: DocumentUploaderPr
     try {
       const token = await getToken();
       const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api";
-      
-      const formData = new FormData();
-      formData.append("file", file);
 
-      const res = await fetch(`${apiUrl}/documents/upload`, {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-        body: formData,
-      });
+      // 1. Fetch presigned upload URL configuration from backend
+      const presignRes = await fetch(
+        `${apiUrl}/documents/presign?filename=${encodeURIComponent(file.name)}&file_type=${encodeURIComponent(file.type || "application/octet-stream")}`,
+        {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        }
+      );
 
-      if (!res.ok) {
-        const errorData = await res.json().catch(() => ({}));
-        throw new Error(errorData.detail || "Failed to upload file");
+      if (!presignRes.ok) {
+        throw new Error("Failed to contact upload presign gateway");
+      }
+
+      const presignData = await presignRes.json();
+
+      if (presignData.use_local_upload) {
+        // LOCAL FALLBACK: Upload directly to the backend API server
+        console.log("Storage provider configured for local upload. Using local fallback path.");
+        const formData = new FormData();
+        formData.append("file", file);
+
+        const localRes = await fetch(`${apiUrl}/documents/upload`, {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+          body: formData,
+        });
+
+        if (!localRes.ok) {
+          const errorData = await localRes.json().catch(() => ({}));
+          throw new Error(errorData.detail || "Failed to upload file locally");
+        }
+      } else {
+        // CLOUD PATH: Direct brokerless upload to Cloudflare R2
+        console.log("Direct storage upload enabled. Sending file to Cloudflare R2.");
+        
+        // Put raw file bytes directly to the pre-signed S3 URL
+        const putRes = await fetch(presignData.upload_url, {
+          method: "PUT",
+          headers: {
+            "Content-Type": file.type || "application/octet-stream",
+          },
+          body: file,
+        });
+
+        if (!putRes.ok) {
+          throw new Error("Failed to upload file bytes directly to R2 object storage");
+        }
+
+        // Register the document in our Supabase registry database
+        const registerRes = await fetch(`${apiUrl}/documents/register`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({
+            filename: file.name,
+            file_type: file.type || "application/octet-stream",
+            storage_path: presignData.storage_path,
+          }),
+        });
+
+        if (!registerRes.ok) {
+          const errorData = await registerRes.json().catch(() => ({}));
+          throw new Error(errorData.detail || "Direct upload succeeded but metadata registration failed");
+        }
       }
 
       setStatus("success");
@@ -63,7 +118,7 @@ export default function DocumentUploader({ onUploadSuccess }: DocumentUploaderPr
     } catch (err: any) {
       console.error(err);
       setStatus("error");
-      setErrorMessage(err.message || "An unexpected error occurred.");
+      setErrorMessage(err.message || "An unexpected error occurred during document upload.");
     }
   };
 

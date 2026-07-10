@@ -45,6 +45,7 @@ interface Citation {
   source: string;
   page_number: number;
   content_preview: string;
+  download_url?: string | null;
 }
 
 export default function ChatDashboard() {
@@ -680,7 +681,18 @@ export default function ChatDashboard() {
             </div>
           </div>
           
-          <div className="border-t border-zinc-800 pt-4 mt-4">
+          <div className="border-t border-zinc-800 pt-4 mt-4 space-y-2">
+            {activeCitation.download_url && (
+              <a
+                href={activeCitation.download_url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="w-full flex items-center justify-center gap-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 py-2 text-xs font-semibold transition-colors cursor-pointer text-white text-center"
+              >
+                <Layers className="h-4 w-4" />
+                Download / View Source
+              </a>
+            )}
             <button
               onClick={() => setActiveCitation(null)}
               className="w-full flex items-center justify-center gap-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 py-2 text-xs font-semibold transition-colors cursor-pointer text-zinc-200"

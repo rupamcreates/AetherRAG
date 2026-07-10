@@ -18,6 +18,14 @@ def init_db() -> None:
             logger.info("Creating database tables...")
             Base.metadata.create_all(bind=conn)
             
+            # Create HNSW index for vector column in document_chunks table to optimize semantic searches
+            logger.info("Creating HNSW index on document_chunks table...")
+            conn.execute(text(
+                "CREATE INDEX IF NOT EXISTS document_chunks_hnsw_idx "
+                "ON document_chunks "
+                "USING hnsw (embedding vector_cosine_ops);"
+            ))
+            
             logger.info("Database initialized successfully.")
     except Exception as e:
         logger.error(f"Error initializing database: {e}")

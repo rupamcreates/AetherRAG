@@ -1,11 +1,13 @@
 import os
 import logging
+import base64
 from typing import List, Dict, Any
 import pandas as pd
 from docx import Document as DocxDocument
 from unstructured_client import UnstructuredClient
 from unstructured_client.models import shared
 from unstructured_client.models.errors import SDKError
+from groq import Groq
 from app.core.config import settings
 
 logger = logging.getLogger(__name__)
@@ -40,7 +42,13 @@ class DocumentParser:
             return self._parse_excel(file_path, original_filename)
         elif ext == ".docx":
             return self._parse_docx(file_path, original_filename)
-        elif ext in [".pdf", ".png", ".jpg", ".jpeg"]:
+        elif ext in [".png", ".jpg", ".jpeg", ".webp"]:
+            try:
+                return self._parse_image_via_groq(file_path, original_filename)
+            except Exception as vision_err:
+                logger.warning(f"Groq Vision parser failed for {original_filename}: {vision_err}. Falling back to unstructured API...")
+                return self._parse_unstructured(file_path, original_filename)
+        elif ext == ".pdf":
             return self._parse_unstructured(file_path, original_filename)
         else:
             raise ValueError(f"Unsupported file extension: {ext}")
@@ -196,7 +204,31 @@ class DocumentParser:
             return blocks
             
         except Exception as e:
-            logger.warning(f"Unstructured API failed for {filename}: {e}. Falling back to mock local text block extraction...")
+            if filename.lower().endswith(".pdf"):
+                logger.warning(f"Unstructured API failed for {filename}: {e}. Falling back to local PyPDF text extraction...")
+                try:
+                    import pypdf
+                    reader = pypdf.PdfReader(file_path)
+                    blocks = []
+                    for idx, page in enumerate(reader.pages):
+                        page_text = page.extract_text()
+                        if page_text and page_text.strip():
+                            blocks.append({
+                                "text": page_text.strip(),
+                                "type": "NarrativeText",
+                                "metadata": {
+                                    "source": filename,
+                                    "file_type": "application/pdf",
+                                    "page_number": idx + 1
+                                }
+                            })
+                    if blocks:
+                        logger.info(f"Successfully extracted {len(blocks)} pages from PDF locally using PyPDF.")
+                        return blocks
+                except Exception as pypdf_err:
+                    logger.error(f"Local PyPDF parsing failed: {pypdf_err}")
+
+            logger.warning(f"Falling back to mock local text block extraction for {filename}...")
             return [{
                 "text": f"This is the fallback parsed text of the document {filename}. It contains information about Monaco Grand Prix and neural networks. [Page 1]",
                 "type": "NarrativeText",
@@ -206,3 +238,52 @@ class DocumentParser:
                     "page_number": 1
                 }
             }]
+
+    def _parse_image_via_groq(self, file_path: str, filename: str) -> List[Dict[str, Any]]:
+        if not settings.GROQ_API_KEY:
+            raise ValueError("GROQ_API_KEY is missing, cannot call Llama Vision API.")
+            
+        with open(file_path, "rb") as image_file:
+            encoded_image = base64.b64encode(image_file.read()).decode("utf-8")
+            
+        try:
+            logger.info(f"Generating Groq Vision description for image {filename}")
+            client = Groq(api_key=settings.GROQ_API_KEY)
+            
+            chat_completion = client.chat.completions.create(
+                messages=[
+                    {
+                        "role": "user",
+                        "content": [
+                            {
+                                "type": "text", 
+                                "text": "Describe this image in detail. Extract any visible text, data tables, labels, diagrams, or charts exactly as they appear. Focus on preserving structured information, names, values, and flow relationships. Do not write introductory or meta text, just output the described contents."
+                            },
+                            {
+                                "type": "image_url",
+                                "image_url": {
+                                    "url": f"data:image/jpeg;base64,{encoded_image}",
+                                },
+                            },
+                        ],
+                    }
+                ],
+                model="llama-3.2-11b-vision-preview",
+                temperature=0.0
+            )
+            
+            description = chat_completion.choices[0].message.content
+            logger.info(f"Successfully generated Groq Vision description for {filename}")
+            
+            return [{
+                "text": description,
+                "type": "NarrativeText",
+                "metadata": {
+                    "source": filename,
+                    "file_type": "image/generic",
+                    "page_number": 1
+                }
+            }]
+        except Exception as e:
+            logger.error(f"Groq Vision transcription failed for {filename}: {e}")
+            raise e

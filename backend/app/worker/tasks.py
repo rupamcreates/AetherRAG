@@ -88,6 +88,7 @@ def process_document_task(self, document_id: str) -> bool:
                     embedding=embeddings[i],
                     chunk_metadata={
                         **chunk["metadata"],
+                        "storage_path": doc.storage_path,
                         "chunk_index": i
                     }
                 )

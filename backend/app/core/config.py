@@ -34,6 +34,12 @@ class Settings(BaseSettings):
     AWS_REGION: Optional[str] = "us-east-1"
     S3_ENDPOINT_URL: Optional[str] = None
 
+    # Cloudflare R2 Settings
+    CLOUDFLARE_ACCOUNT_ID: Optional[str] = None
+    R2_ACCESS_KEY_ID: Optional[str] = None
+    R2_SECRET_ACCESS_KEY: Optional[str] = None
+    R2_BUCKET_NAME: Optional[str] = None
+
     # LLM and Embeddings API Keys
     GROQ_API_KEY: Optional[str] = None
     HUGGINGFACE_API_KEY: Optional[str] = None
