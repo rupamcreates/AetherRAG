@@ -1,3 +1,17 @@
+# Globally disable IPv6 to force requests and sockets to resolve hostnames via IPv4 only.
+# This prevents NameResolutionError for HuggingFace on Render.com free containers.
+try:
+    import urllib3.util.connection as urllib3_connection
+    urllib3_connection.HAS_IPV6 = False
+except Exception:
+    pass
+
+try:
+    import requests.packages.urllib3.util.connection as urllib3_connection
+    urllib3_connection.HAS_IPV6 = False
+except Exception:
+    pass
+
 import os
 from celery import Celery
 from app.core.config import settings
