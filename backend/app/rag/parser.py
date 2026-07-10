@@ -5,7 +5,7 @@ from typing import List, Dict, Any
 import pandas as pd
 from docx import Document as DocxDocument
 from unstructured_client import UnstructuredClient
-from unstructured_client.models import shared
+from unstructured_client.models import shared, operations
 from unstructured_client.models.errors import SDKError
 from groq import Groq
 from app.core.config import settings
@@ -158,12 +158,14 @@ class DocumentParser:
         # Use hi_res for PDFs to detect tables and extract layout properly
         strategy = "hi_res" if filename.lower().endswith(".pdf") else "auto"
 
-        req = shared.PartitionParameters(
-            files=files,
-            strategy=shared.Strategy(strategy),
-            hi_res_model_name="yolox",
-            pdf_infer_table_structure=True,
-            skip_infer_table_types=[]
+        req = operations.PartitionRequest(
+            partition_parameters=shared.PartitionParameters(
+                files=files,
+                strategy=shared.Strategy(strategy),
+                hi_res_model_name="yolox",
+                pdf_infer_table_structure=True,
+                skip_infer_table_types=[]
+            )
         )
 
         try:
