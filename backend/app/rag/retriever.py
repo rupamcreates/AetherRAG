@@ -176,12 +176,25 @@ class HuggingFaceReranker:
                     # BGE-reranker usually returns a list of floats (the higher the score, the more relevant)
                     # or list of dicts with score key. Let's parse both.
                     
-                    # Map scores back to candidates
+                    # Map scores back to candidates. Support both nested and flat response formats.
+                    if isinstance(scores, list) and len(scores) == 1 and isinstance(scores[0], list) and len(scores[0]) == len(candidates):
+                        scores_list = scores[0]
+                    else:
+                        scores_list = scores
+
                     scored_candidates = []
                     for i, cand in enumerate(candidates):
-                        score = scores[i]
+                        if i >= len(scores_list):
+                            break
+                        score = scores_list[i]
                         if isinstance(score, dict) and "score" in score:
                             score_val = score["score"]
+                        elif isinstance(score, list) and len(score) > 0:
+                            inner_val = score[0]
+                            if isinstance(inner_val, dict) and "score" in inner_val:
+                                score_val = inner_val["score"]
+                            else:
+                                score_val = float(inner_val)
                         else:
                             score_val = float(score)
                         
