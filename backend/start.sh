@@ -5,7 +5,7 @@
 set -e
 
 echo "Starting Celery worker process in the background..."
-uv run celery -A app.worker.celery_app worker --loglevel=info &
+uv run celery -A app.worker.celery_app worker --loglevel=info -P solo &
 
 echo "Starting FastAPI application server on port ${PORT:-7860}..."
 uv run uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-7860}
