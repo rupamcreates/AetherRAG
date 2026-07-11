@@ -256,7 +256,7 @@ def get_rag_graph():
     # PostgresSaver uses standard connection pool from psycopg_pool
     # Let's handle cases where database is not configured (e.g. unit tests or local dev checkouts)
     try:
-        pool = ConnectionPool(conninfo=connection_string, min_size=1, max_size=5)
+        pool = ConnectionPool(conninfo=connection_string, min_size=1, max_size=5, kwargs={"autocommit": True})
         checkpointer = PostgresSaver(pool)
         # Ensure saver tables exist
         checkpointer.setup()
