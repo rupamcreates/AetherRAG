@@ -50,7 +50,7 @@ def process_document_task(self, document_id: str) -> bool:
             
             # 3. Parse Document
             parser = DocumentParser()
-            parsed_elements = parser.parse_file(temp_path, doc.name)
+            parsed_elements = parser.parse_file(temp_path, doc.name, str(doc.user_id))
             
             if not parsed_elements:
                 raise ValueError("No elements parsed from the document.")

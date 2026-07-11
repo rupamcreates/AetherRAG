@@ -202,6 +202,9 @@ async def query_rag(
                 source_name = meta.get("source", "Unknown")
                 page_num = meta.get("page_number", 1)
                 storage_path = meta.get("storage_path", source_name)
+                if meta.get("is_image", False) and meta.get("image_path"):
+                    storage_path = meta.get("image_path")
+                    
                 cite_key = f"[^{idx+1}]"
                 
                 # Dynamic content_type detection
@@ -242,12 +245,8 @@ async def query_rag(
                         logger.warning(f"Failed to generate R2 download URL for citation: {s3_err}")
                 
                 if not download_url:
-                    try:
-                        doc = db.query(Document).filter(Document.storage_path == storage_path).first()
-                        if doc:
-                            download_url = f"{settings.BACKEND_URL}/api/documents/{doc.id}/download"
-                    except Exception as db_err:
-                        logger.warning(f"Failed to fetch document from DB for local download link: {db_err}")
+                    if storage_path:
+                        download_url = f"{settings.BACKEND_URL}/api/documents/file?path={storage_path}"
                 
                 citations_map[cite_key] = {
                     "source": source_name,

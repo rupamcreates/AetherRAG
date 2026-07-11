@@ -266,3 +266,35 @@ def download_document_file(
             
     else:
         raise HTTPException(status_code=400, detail="Downloads only supported for local and Supabase storage providers via this endpoint.")
+
+@router.get("/file")
+def get_file(
+    path: str,
+    user_id: str = Depends(get_current_user)
+):
+    # Security check: path must start with user_id or contain user_id prefix
+    if not path.startswith(f"{user_id}/") and not f"/{user_id}/" in path:
+        raise HTTPException(status_code=403, detail="Access denied to this file.")
+        
+    provider = settings.STORAGE_PROVIDER.lower()
+    filename = os.path.basename(path)
+    
+    if provider == "local":
+        file_path = os.path.join(settings.LOCAL_STORAGE_DIR, path)
+        if not os.path.exists(file_path):
+            raise HTTPException(status_code=404, detail="File not found.")
+        return FileResponse(file_path, filename=filename)
+        
+    elif provider == "supabase":
+        storage = StorageService.get_storage()
+        import tempfile
+        temp_dir = tempfile.gettempdir()
+        temp_path = os.path.join(temp_dir, filename)
+        try:
+            storage.download_file(path, temp_path)
+            return FileResponse(temp_path, filename=filename)
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Failed to fetch file from Supabase storage: {e}")
+            
+    else:
+        raise HTTPException(status_code=400, detail="Downloads only supported for local and Supabase storage providers.")

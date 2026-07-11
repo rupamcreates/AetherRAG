@@ -167,11 +167,11 @@ export default function ChatDashboard() {
         data.forEach((msg: any) => {
           if (msg.role === "assistant" && msg.citations && msg.citations.length > 0) {
             msg.citations.forEach((cite: any) => {
-              if (!historyCitations.some(c => 
-                (c.source === cite.source && c.page_number === cite.page_number) ||
-                (c.index !== undefined && cite.index !== undefined && c.index === cite.index)
-              )) {
+              const idx = historyCitations.findIndex(c => c.index === cite.index);
+              if (idx === -1) {
                 historyCitations.push(cite);
+              } else {
+                historyCitations[idx] = { ...historyCitations[idx], ...cite };
               }
             });
           }
@@ -314,12 +314,12 @@ export default function ChatDashboard() {
                   setCitations((prev) => {
                     const merged = [...prev];
                     parsed.citations.forEach((newCite: Citation) => {
-                      const exists = merged.some(
-                        (c) =>
-                          (c.source === newCite.source && c.page_number === newCite.page_number) ||
-                          (c.index !== undefined && newCite.index !== undefined && c.index === newCite.index)
-                      );
-                      if (!exists) merged.push(newCite);
+                      const idx = merged.findIndex(c => c.index === newCite.index);
+                      if (idx === -1) {
+                        merged.push(newCite);
+                      } else {
+                        merged[idx] = { ...merged[idx], ...newCite };
+                      }
                     });
                     return merged;
                   });

@@ -26,7 +26,7 @@ class DocumentParser:
             self.unstructured_client = None
             logger.warning("UNSTRUCTURED_API_KEY is not set. PDF and Image parsing will fail.")
 
-    def parse_file(self, file_path: str, original_filename: str) -> List[Dict[str, Any]]:
+    def parse_file(self, file_path: str, original_filename: str, user_id: str = "default_user") -> List[Dict[str, Any]]:
         """
         Parses a file and returns a list of dictionaries, where each dict represents a parsed block
         with fields: 'text', 'type', and 'metadata'.
@@ -47,9 +47,9 @@ class DocumentParser:
                 return self._parse_image_via_groq(file_path, original_filename)
             except Exception as vision_err:
                 logger.warning(f"Groq Vision parser failed for {original_filename}: {vision_err}. Falling back to unstructured API...")
-                return self._parse_unstructured(file_path, original_filename)
+                return self._parse_unstructured(file_path, original_filename, user_id)
         elif ext == ".pdf":
-            return self._parse_unstructured(file_path, original_filename)
+            return self._parse_unstructured(file_path, original_filename, user_id)
         else:
             raise ValueError(f"Unsupported file extension: {ext}")
 
@@ -143,7 +143,7 @@ class DocumentParser:
                 
         return blocks
 
-    def _parse_unstructured(self, file_path: str, filename: str) -> List[Dict[str, Any]]:
+    def _parse_unstructured(self, file_path: str, filename: str, user_id: str = "default_user") -> List[Dict[str, Any]]:
         if not self.unstructured_client:
             raise ValueError("Unstructured client is not initialized because UNSTRUCTURED_API_KEY is missing.")
 
@@ -164,7 +164,9 @@ class DocumentParser:
                 strategy=shared.Strategy(strategy),
                 hi_res_model_name="yolox",
                 pdf_infer_table_structure=True,
-                skip_infer_table_types=[]
+                skip_infer_table_types=[],
+                extract_image_block_types=["Image"],
+                extract_image_block_to_payload=True
             )
         )
 
@@ -174,16 +176,38 @@ class DocumentParser:
             
             for element in res.elements:
                 text = element.get("text", "")
-                if not text.strip():
-                    continue
-                
                 el_type = element.get("type", "NarrativeText")
                 metadata = element.get("metadata", {})
+                
+                # Check for image block extraction
+                image_path = None
+                image_base64 = metadata.get("image_base64")
+                if image_base64:
+                    try:
+                        import uuid
+                        img_data = base64.b64decode(image_base64)
+                        img_filename = f"extracted_image_{uuid.uuid4().hex}.png"
+                        storage_key = f"{user_id}/extracted_images/{img_filename}"
+                        
+                        from app.services.storage import StorageService
+                        storage = StorageService.get_storage()
+                        storage.upload_file(img_data, storage_key)
+                        image_path = storage_key
+                        logger.info(f"Extracted layout image uploaded: {image_path}")
+                    except Exception as img_err:
+                        logger.error(f"Failed to process extracted image: {img_err}")
                 
                 # Check for tables and extract table HTML
                 if el_type == "Table" and "text_as_html" in metadata:
                     # Keep the markdown/text version for embeddings, but save HTML inside metadata
                     pass
+                
+                # If it's an image block but has no text, let's keep a description so it chunks/embeds nicely
+                if el_type == "Image" and not text.strip():
+                    text = f"Image showing visual layout element on page {metadata.get('page_number', 1)}"
+                
+                if not text.strip():
+                    continue
                 
                 # Clean up metadata structure for db compatibility
                 cleaned_metadata = {
@@ -192,6 +216,10 @@ class DocumentParser:
                     "page_number": metadata.get("page_number", 1)
                 }
                 
+                if image_path:
+                    cleaned_metadata["image_path"] = image_path
+                    cleaned_metadata["is_image"] = True
+                    cleaned_metadata["file_type"] = "image/png"
                 if "text_as_html" in metadata:
                     cleaned_metadata["text_as_html"] = metadata["text_as_html"]
                 if "section" in metadata:
