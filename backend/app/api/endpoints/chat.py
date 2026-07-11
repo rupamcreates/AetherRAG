@@ -366,7 +366,8 @@ async def query_rag(
             # 7. Extract citations actually used in the response
             used_citations = []
             for key, value in citations_map.items():
-                if key in accumulated_answer:
+                idx = value.get("index")
+                if (key in accumulated_answer) or (idx is not None and (f"({idx})" in accumulated_answer or f"[{idx}]" in accumulated_answer)):
                     used_citations.append(value)
                     
             # 8. Save updated chat history in memory checkpointer

@@ -222,7 +222,8 @@ def node_generate(state: RAGState) -> Dict[str, Any]:
     response_text = response.content
     
     for key, value in citations_map.items():
-        if key in response_text:
+        idx = value.get("index")
+        if (key in response_text) or (idx is not None and (f"({idx})" in response_text or f"[{idx}]" in response_text)):
             used_citations.append(value)
             
     return {
