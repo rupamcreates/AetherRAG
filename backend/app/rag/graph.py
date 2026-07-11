@@ -7,7 +7,7 @@ from langgraph.checkpoint.postgres import PostgresSaver
 from psycopg_pool import ConnectionPool
 from app.core.config import settings
 from app.db.session import SessionLocal
-from app.db.models import Document
+from app.db.models import Document, DocumentChunk
 from app.rag.retriever import MultiQueryExpansion, HybridRetriever, HuggingFaceReranker, reciprocal_rank_fusion
 from langchain_groq import ChatGroq
 from langchain_core.prompts import ChatPromptTemplate
@@ -90,6 +90,32 @@ def node_generate(state: RAGState) -> Dict[str, Any]:
     logger.info("LangGraph Node: generate")
     messages = state["messages"]
     chunks = state.get("reranked_chunks", [])
+    # Automatically fetch and append any image chunks from the referenced documents to guarantee the LLM can reference visual assets.
+    db_session = SessionLocal()
+    try:
+        top_chunk_ids = [c["id"] for c in chunks]
+        if top_chunk_ids:
+            db_chunks = db_session.query(DocumentChunk).filter(DocumentChunk.id.in_(top_chunk_ids)).all()
+            doc_ids = list(set(c.document_id for c in db_chunks if c.document_id))
+            if doc_ids:
+                db_images = db_session.query(DocumentChunk).filter(
+                    DocumentChunk.document_id.in_(doc_ids)
+                ).all()
+                for img_c in db_images:
+                    meta = img_c.chunk_metadata or {}
+                    if meta.get("is_image", False) or meta.get("type") == "image":
+                        # Avoid duplicating if it was somehow already retrieved
+                        if not any(c["id"] == str(img_c.id) for c in chunks):
+                            chunks.append({
+                                "id": str(img_c.id),
+                                "content": img_c.content,
+                                "metadata": meta,
+                                "score": 1.0
+                            })
+    except Exception as append_err:
+        logger.warning(f"Failed to automatically pull related image chunks in graph node: {append_err}")
+    finally:
+        db_session.close()
     
     # Format Context Chunks with metadata keys
     context_str = ""

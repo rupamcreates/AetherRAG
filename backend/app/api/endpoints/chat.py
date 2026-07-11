@@ -7,7 +7,7 @@ from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 from sqlalchemy import text
 from app.api.deps import get_db, get_current_user
-from app.db.models import ChatThread, Document
+from app.db.models import ChatThread, Document, DocumentChunk
 from app.rag.graph import get_rag_graph
 from langchain_core.messages import HumanMessage, AIMessage
 from langchain_core.prompts import ChatPromptTemplate
@@ -201,6 +201,30 @@ async def query_rag(
             # 3. Run Reranking
             reranker = HuggingFaceReranker()
             top_chunks = reranker.rerank(query_in.message, combined_hits, top_k=5)
+            
+            # Automatically fetch and append any image chunks from the referenced documents to guarantee the LLM can reference visual assets.
+            try:
+                top_chunk_ids = [c["id"] for c in top_chunks]
+                if top_chunk_ids:
+                    db_chunks = db.query(DocumentChunk).filter(DocumentChunk.id.in_(top_chunk_ids)).all()
+                    doc_ids = list(set(c.document_id for c in db_chunks if c.document_id))
+                    if doc_ids:
+                        db_images = db.query(DocumentChunk).filter(
+                            DocumentChunk.document_id.in_(doc_ids)
+                        ).all()
+                        for img_c in db_images:
+                            meta = img_c.chunk_metadata or {}
+                            if meta.get("is_image", False) or meta.get("type") == "image":
+                                # Avoid duplicating if it was somehow already retrieved
+                                if not any(c["id"] == str(img_c.id) for c in top_chunks):
+                                    top_chunks.append({
+                                        "id": str(img_c.id),
+                                        "content": img_c.content,
+                                        "metadata": meta,
+                                        "score": 1.0
+                                    })
+            except Exception as append_err:
+                logger.warning(f"Failed to automatically pull related image chunks: {append_err}")
             
             # 4. Format Context Chunks with metadata keys
             context_str = ""
