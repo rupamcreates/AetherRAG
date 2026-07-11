@@ -180,22 +180,7 @@ class DocumentParser:
                 metadata = element.get("metadata", {})
                 
                 # Check for image block extraction
-                image_path = None
                 image_base64 = metadata.get("image_base64")
-                if image_base64:
-                    try:
-                        import uuid
-                        img_data = base64.b64decode(image_base64)
-                        img_filename = f"extracted_image_{uuid.uuid4().hex}.png"
-                        storage_key = f"{user_id}/extracted_images/{img_filename}"
-                        
-                        from app.services.storage import StorageService
-                        storage = StorageService.get_storage()
-                        storage.upload_file(img_data, storage_key)
-                        image_path = storage_key
-                        logger.info(f"Extracted layout image uploaded: {image_path}")
-                    except Exception as img_err:
-                        logger.error(f"Failed to process extracted image: {img_err}")
                 
                 # Check for tables and extract table HTML
                 if el_type == "Table" and "text_as_html" in metadata:
@@ -216,8 +201,8 @@ class DocumentParser:
                     "page_number": metadata.get("page_number", 1)
                 }
                 
-                if image_path:
-                    cleaned_metadata["image_path"] = image_path
+                if image_base64:
+                    cleaned_metadata["image_base64"] = image_base64
                     cleaned_metadata["is_image"] = True
                     cleaned_metadata["file_type"] = "image/png"
                 if "text_as_html" in metadata:

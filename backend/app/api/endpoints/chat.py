@@ -210,9 +210,6 @@ async def query_rag(
                 source_name = meta.get("source", "Unknown")
                 page_num = meta.get("page_number", 1)
                 storage_path = meta.get("storage_path", source_name)
-                if meta.get("is_image", False) and meta.get("image_path"):
-                    storage_path = meta.get("image_path")
-                    
                 cite_key = f"[^{idx+1}]"
                 
                 # Dynamic content_type detection
@@ -222,39 +219,42 @@ async def query_rag(
                     content_type = "image_transcription"
                 else:
                     content_type = "text"
-                
+                    
                 # Dynamic presigned download link generation for Cloudflare R2
                 download_url = None
-                provider = settings.STORAGE_PROVIDER.lower()
-                if provider in ("r2", "s3") and settings.CLOUDFLARE_ACCOUNT_ID and settings.R2_ACCESS_KEY_ID:
-                    try:
-                        import boto3
-                        from botocore.config import Config
-                        
-                        endpoint_url = f"https://{settings.CLOUDFLARE_ACCOUNT_ID}.r2.cloudflarestorage.com"
-                        s3_client = boto3.client(
-                            "s3",
-                            endpoint_url=endpoint_url,
-                            aws_access_key_id=settings.R2_ACCESS_KEY_ID or settings.AWS_ACCESS_KEY_ID,
-                            aws_secret_access_key=settings.R2_SECRET_ACCESS_KEY or settings.AWS_SECRET_ACCESS_KEY,
-                            config=Config(signature_version="s3v4"),
-                            region_name="us-east-1"
-                        )
-                        bucket = settings.R2_BUCKET_NAME or settings.STORAGE_BUCKET_NAME
-                        download_url = s3_client.generate_presigned_url(
-                            ClientMethod="get_object",
-                            Params={
-                                "Bucket": bucket,
-                                "Key": storage_path
-                            },
-                            ExpiresIn=3600
-                        )
-                    except Exception as s3_err:
-                        logger.warning(f"Failed to generate R2 download URL for citation: {s3_err}")
-                
-                if not download_url:
-                    if storage_path:
-                        download_url = f"{backend_url}/api/documents/file?path={storage_path}"
+                if meta.get("is_image", False) and meta.get("image_base64"):
+                    download_url = f"data:image/png;base64,{meta['image_base64']}"
+                else:
+                    provider = settings.STORAGE_PROVIDER.lower()
+                    if provider in ("r2", "s3") and settings.CLOUDFLARE_ACCOUNT_ID and settings.R2_ACCESS_KEY_ID:
+                        try:
+                            import boto3
+                            from botocore.config import Config
+                            
+                            endpoint_url = f"https://{settings.CLOUDFLARE_ACCOUNT_ID}.r2.cloudflarestorage.com"
+                            s3_client = boto3.client(
+                                "s3",
+                                endpoint_url=endpoint_url,
+                                aws_access_key_id=settings.R2_ACCESS_KEY_ID or settings.AWS_ACCESS_KEY_ID,
+                                aws_secret_access_key=settings.R2_SECRET_ACCESS_KEY or settings.AWS_SECRET_ACCESS_KEY,
+                                config=Config(signature_version="s3v4"),
+                                region_name="us-east-1"
+                            )
+                            bucket = settings.R2_BUCKET_NAME or settings.STORAGE_BUCKET_NAME
+                            download_url = s3_client.generate_presigned_url(
+                                ClientMethod="get_object",
+                                Params={
+                                    "Bucket": bucket,
+                                    "Key": storage_path
+                                },
+                                ExpiresIn=3600
+                            )
+                        except Exception as s3_err:
+                            logger.warning(f"Failed to generate R2 download URL for citation: {s3_err}")
+                    
+                    if not download_url:
+                        if storage_path:
+                            download_url = f"{backend_url}/api/documents/file?path={storage_path}"
                 
                 citations_map[cite_key] = {
                     "source": source_name,
