@@ -381,18 +381,18 @@ export default function ChatDashboard() {
     }
   };
 
-  // Parse raw text and extract citation pills (e.g. [^1], [^1, 2], [^1, ^4])
+  // Parse raw text and extract citation pills (e.g. [~1], [~1, 2], [~1, ~4])
   const parseCitationsAndText = (text: string) => {
-    const regex = /(\[\^[\d,\s\^]+\])/g;
+    const regex = /(\[~[\d,\s\~]+\])/g;
     const parts = text.split(regex);
     if (parts.length === 1) return text;
 
     return parts.map((part, i) => {
       if (i % 2 === 1) {
-        const cleanString = part.replace(/[\[\]]/g, ''); // "^1, ^4"
+        const cleanString = part.replace(/[\[\]~]/g, ''); // "1, 4"
         const ids = cleanString
           .split(',')
-          .map(id => id.replace(/\^/g, '').trim())
+          .map(id => id.trim())
           .filter(id => id.length > 0);
 
         return (
@@ -506,13 +506,15 @@ export default function ChatDashboard() {
       }
     };
 
+    const preprocessedContent = content.replace(/\[\^([\d,\s\^]+)\]/g, '[~$1]');
+
     return (
       <ReactMarkdown
         remarkPlugins={[remarkGfm, remarkMath]}
         rehypePlugins={[rehypeKatex]}
         components={markdownComponents}
       >
-        {content}
+        {preprocessedContent}
       </ReactMarkdown>
     );
   };

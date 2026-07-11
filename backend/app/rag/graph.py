@@ -189,6 +189,8 @@ def node_generate(state: RAGState) -> Dict[str, Any]:
             if display_url.startswith("data:image/"):
                 display_url = "data:image/png;base64,[BASE64_IMAGE_DATA_TRUNCATED]"
             context_str += f"Source Link: {display_url}\n"
+        if content_type == "image_transcription":
+            context_str += f"[VISUAL IMAGE CHUNK: To display this image in your response, you MUST output: ![{source_name} page {page_num}]({idx + 1})]\n"
         context_str += f"Content: {chunk['content']}\n"
         if "text_as_html" in meta:
             context_str += f"[Table HTML: {meta['text_as_html']}]\n"
