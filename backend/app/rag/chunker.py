@@ -63,6 +63,15 @@ class DocumentChunker:
                         "type": "table"
                     }
                 })
+            elif el_type == "Image" or metadata.get("is_image", False):
+                # Images are kept intact as individual chunks to preserve image_path and is_image
+                chunks.append({
+                    "content": text,
+                    "metadata": {
+                        **metadata,
+                        "type": "image"
+                    }
+                })
             else:
                 # Narrative/Text block
                 if page_num not in pages_text:

@@ -165,7 +165,7 @@ class DocumentParser:
                 hi_res_model_name="yolox",
                 pdf_infer_table_structure=True,
                 skip_infer_table_types=[],
-                extract_image_block_types=["Image"],
+                extract_image_block_types=["Image", "Figure"],
                 extract_image_block_to_payload=True
             )
         )
@@ -202,8 +202,8 @@ class DocumentParser:
                     # Keep the markdown/text version for embeddings, but save HTML inside metadata
                     pass
                 
-                # If it's an image block but has no text, let's keep a description so it chunks/embeds nicely
-                if el_type == "Image" and not text.strip():
+                # If it's an image/figure block but has no text, let's keep a description so it chunks/embeds nicely
+                if el_type in ("Image", "Figure") and not text.strip():
                     text = f"Image showing visual layout element on page {metadata.get('page_number', 1)}"
                 
                 if not text.strip():

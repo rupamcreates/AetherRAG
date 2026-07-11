@@ -2,7 +2,7 @@ import uuid
 import json
 import logging
 from typing import List, Dict, Any
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Request
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 from sqlalchemy import text
@@ -167,6 +167,7 @@ def delete_thread(
 @router.post("/query")
 async def query_rag(
     query_in: QueryIn,
+    request: Request,
     db: Session = Depends(get_db),
     user_id: str = Depends(get_current_user)
 ):
@@ -174,6 +175,13 @@ async def query_rag(
     thread = db.query(ChatThread).filter(ChatThread.id == query_in.thread_id, ChatThread.user_id == user_id).first()
     if not thread:
         raise HTTPException(status_code=404, detail="Chat thread not found or access denied.")
+        
+    backend_url = settings.BACKEND_URL
+    if not backend_url or "localhost" in backend_url or "127.0.0.1" in backend_url:
+        backend_url = str(request.base_url).rstrip("/")
+        proto = request.headers.get("x-forwarded-proto")
+        if proto == "https" and backend_url.startswith("http://"):
+            backend_url = "https://" + backend_url.split("://", 1)[1]
         
     async def event_generator():
         try:
@@ -246,7 +254,7 @@ async def query_rag(
                 
                 if not download_url:
                     if storage_path:
-                        download_url = f"{settings.BACKEND_URL}/api/documents/file?path={storage_path}"
+                        download_url = f"{backend_url}/api/documents/file?path={storage_path}"
                 
                 citations_map[cite_key] = {
                     "source": source_name,
