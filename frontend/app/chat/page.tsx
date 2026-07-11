@@ -20,6 +20,12 @@ import {
   RefreshCw
 } from "lucide-react";
 import DocumentUploader from "@/components/DocumentUploader";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
+import remarkMath from "remark-math";
+import rehypeKatex from "rehype-katex";
+import "katex/dist/katex.min.css";
+import React from "react";
 
 interface Thread {
   id: string;
@@ -46,6 +52,7 @@ interface Citation {
   page_number: number;
   content_preview: string;
   download_url?: string | null;
+  index?: number;
 }
 
 export default function ChatDashboard() {
@@ -296,7 +303,9 @@ export default function ChatDashboard() {
                   const merged = [...prev];
                   parsed.citations.forEach((newCite: Citation) => {
                     const exists = merged.some(
-                      (c) => c.source === newCite.source && c.page_number === newCite.page_number
+                      (c) =>
+                        (c.source === newCite.source && c.page_number === newCite.page_number) ||
+                        (c.index !== undefined && newCite.index !== undefined && c.index === newCite.index)
                     );
                     if (!exists) merged.push(newCite);
                   });
@@ -324,7 +333,21 @@ export default function ChatDashboard() {
     }
   };
 
-  // Find citation information by key
+  // Find citation information by index
+  const handleCitationClickByIndex = (index: number) => {
+    const citation = citations.find((c) => c.index === index);
+    if (citation) {
+      setActiveCitation(citation);
+    } else {
+      setActiveCitation({
+        source: `Document Reference [^${index}]`,
+        page_number: 1,
+        content_preview: "Source context preview is not loaded or saved in current session metadata."
+      });
+    }
+  };
+
+  // Find citation information by key (for legacy items)
   const handleCitationClick = (source: string, pageNumber: number) => {
     const citation = citations.find(
       (c) => c.source === source && c.page_number === pageNumber
@@ -332,7 +355,6 @@ export default function ChatDashboard() {
     if (citation) {
       setActiveCitation(citation);
     } else {
-      // Fallback in case citation object wasn't returned in the latest payload (e.g. from history load)
       setActiveCitation({
         source,
         page_number: pageNumber,
@@ -341,31 +363,100 @@ export default function ChatDashboard() {
     }
   };
 
-  // Parse assistant response to render clickable citations
-  const renderMessageContent = (content: string) => {
-    const regex = /\[([^\]]+_Page\d+)\]/g;
-    const parts = content.split(regex);
-    if (parts.length === 1) return content;
+  // Parse raw text and extract citation pills (e.g. [^1], [^1, 2], [^1, ^4])
+  const parseCitationsAndText = (text: string) => {
+    const regex = /(\[\^[\d,\s\^]+\])/g;
+    const parts = text.split(regex);
+    if (parts.length === 1) return text;
 
     return parts.map((part, i) => {
       if (i % 2 === 1) {
-        const citeKey = part; // e.g., "report.pdf_Page4"
-        const underscoreIdx = citeKey.lastIndexOf("_Page");
-        const source = citeKey.substring(0, underscoreIdx);
-        const pageNumber = parseInt(citeKey.substring(underscoreIdx + 5), 10);
+        const cleanString = part.replace(/[\[\]]/g, ''); // "^1, ^4"
+        const ids = cleanString
+          .split(',')
+          .map(id => id.replace(/\^/g, '').trim())
+          .filter(id => id.length > 0);
 
         return (
-          <button
-            key={i}
-            onClick={() => handleCitationClick(source, pageNumber)}
-            className="inline-flex items-center mx-0.5 px-1.5 py-0.5 rounded text-[10px] font-bold bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 hover:bg-indigo-500/40 hover:text-white transition-all cursor-pointer align-baseline"
-          >
-            {source} (p. {pageNumber})
-          </button>
+          <span key={i} className="inline-flex gap-1 mx-0.5 align-baseline">
+            {ids.map(id => {
+              const citationIndex = parseInt(id, 10);
+              const citation = citations.find(c => c.index === citationIndex);
+
+              return (
+                <a
+                  key={id}
+                  href={citation?.download_url || "#"}
+                  target={citation?.download_url ? "_blank" : undefined}
+                  rel="noopener noreferrer"
+                  onClick={(e) => {
+                    if (!citation?.download_url) {
+                      e.preventDefault();
+                    }
+                    handleCitationClickByIndex(citationIndex);
+                  }}
+                  className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-blue-600/10 text-blue-400 border border-blue-500/20 hover:bg-blue-600/20 hover:text-blue-300 transition-all cursor-pointer select-none"
+                >
+                  {id}
+                </a>
+              );
+            })}
+          </span>
         );
       }
       return part;
     });
+  };
+
+  // Helper to map and process children elements
+  const processChildren = (children: any): any => {
+    return React.Children.map(children, (child) => {
+      if (typeof child === 'string') {
+        return parseCitationsAndText(child);
+      }
+      return child;
+    });
+  };
+
+  // Parse assistant response to render clickable citations & GFM markdown
+  const renderMessageContent = (content: string) => {
+    const markdownComponents = {
+      p: ({ children }: any) => <span className="block mb-2 last:mb-0">{processChildren(children)}</span>,
+      li: ({ children }: any) => <li className="ml-4 list-disc">{processChildren(children)}</li>,
+      td: ({ children }: any) => <td className="border border-zinc-800 px-3 py-1.5 text-xs">{processChildren(children)}</td>,
+      th: ({ children }: any) => <th className="border border-zinc-800 bg-zinc-900/60 px-3 py-1.5 text-xs font-semibold text-left">{processChildren(children)}</th>,
+      h1: ({ children }: any) => <h1 className="text-lg font-bold mt-3 mb-1">{processChildren(children)}</h1>,
+      h2: ({ children }: any) => <h2 className="text-base font-bold mt-2 mb-1">{processChildren(children)}</h2>,
+      h3: ({ children }: any) => <h3 className="text-sm font-bold mt-2 mb-1">{processChildren(children)}</h3>,
+      table: ({ children }: any) => (
+        <div className="my-3 overflow-x-auto max-w-full rounded-lg border border-zinc-800 bg-zinc-950">
+          <table className="min-w-full divide-y divide-zinc-800 text-sm border-collapse">{children}</table>
+        </div>
+      ),
+      code: ({ inline, className, children, ...props }: any) => {
+        return !inline ? (
+          <pre className="bg-zinc-900/80 border border-zinc-800 rounded-lg p-3 my-2 overflow-x-auto text-xs font-mono select-all">
+            <code className={className} {...props}>
+              {children}
+            </code>
+          </pre>
+        ) : (
+          <code className="bg-zinc-900 px-1.5 py-0.5 rounded text-xs font-mono text-zinc-300" {...props}>
+            {children}
+          </code>
+        );
+      }
+    };
+
+    return (
+      <ReactMarkdown
+        remarkPlugins={[remarkGfm, remarkMath]}
+        rehypePlugins={[rehypeKatex]}
+        components={markdownComponents}
+      >
+        {content}
+      </ReactMarkdown>
+    );
   };
 
   return (
@@ -585,10 +676,12 @@ export default function ChatDashboard() {
                           : "bg-zinc-950 border-zinc-800/80 text-zinc-300"
                       }`}
                     >
-                      <div className="whitespace-pre-line">
-                        {msg.role === "assistant"
-                          ? renderMessageContent(msg.content)
-                          : msg.content}
+                      <div>
+                        {msg.role === "assistant" ? (
+                          renderMessageContent(msg.content)
+                        ) : (
+                          <div className="whitespace-pre-line">{msg.content}</div>
+                        )}
                       </div>
                     </div>
                   </div>
