@@ -291,7 +291,10 @@ async def query_rag(
                 context_str += f"Source: {source_name} (Page {page_num})\n"
                 context_str += f"Content Type: {content_type}\n"
                 if download_url:
-                    context_str += f"Source Link: {download_url}\n"
+                    display_url = download_url
+                    if display_url.startswith("data:image/"):
+                        display_url = "data:image/png;base64,[BASE64_IMAGE_DATA_TRUNCATED]"
+                    context_str += f"Source Link: {display_url}\n"
                 context_str += f"Content: {chunk['content']}\n"
                 if "text_as_html" in meta:
                     context_str += f"[Table HTML: {meta['text_as_html']}]\n"
