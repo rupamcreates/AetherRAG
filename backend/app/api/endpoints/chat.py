@@ -305,7 +305,23 @@ async def query_rag(
             config = {"configurable": {"thread_id": str(query_in.thread_id)}}
             try:
                 state_snapshot = graph.get_state(config)
-                history = state_snapshot.values.get("messages", []) if state_snapshot.values else []
+                raw_history = state_snapshot.values.get("messages", []) if state_snapshot.values else []
+                history = []
+                for msg in raw_history:
+                    if isinstance(msg, AIMessage):
+                        citations = msg.additional_kwargs.get("citations")
+                        if citations:
+                            cleaned_citations = []
+                            for c in citations:
+                                cite_copy = c.copy() if isinstance(c, dict) else dict(c)
+                                if cite_copy.get("download_url", "").startswith("data:image/"):
+                                    cite_copy["download_url"] = "data:image/png;base64,[BASE64_IMAGE_DATA_TRUNCATED]"
+                                cleaned_citations.append(cite_copy)
+                            msg = AIMessage(
+                                content=msg.content,
+                                additional_kwargs={**msg.additional_kwargs, "citations": cleaned_citations}
+                            )
+                    history.append(msg)
             except Exception as se:
                 logger.warning(f"Failed to fetch state from checkpointer: {se}")
                 history = []
