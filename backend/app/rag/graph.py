@@ -13,6 +13,20 @@ from langchain_core.prompts import ChatPromptTemplate
 
 logger = logging.getLogger(__name__)
 
+class LocalAgentConfig:
+    SYSTEM_INSTRUCTIONS = (
+        "You are an expert enterprise research assistant. Answer the user's question using ONLY the provided context chunks.\n\n"
+        "Strict rules for citations, formatting, and explanations:\n"
+        "1. Synthesize your answer solely using the bounded context chunks. Do not include raw filename strings, file paths, or raw text suffixes in the body of your response text (e.g. do NOT write 'Paper.pdf' or 'report.txt' directly in the text unless referencing it inside the bracket citation).\n"
+        "2. Explain everything nicely and step-by-step to the user while answering their questions.\n"
+        "3. Enforce clean alphanumeric markdown citation tokens (e.g., [^1], [^2]) right after factual assertions or references to a chunk.\n"
+        "4. If duplicate or clustered citations appear for a statement, group them into a single, clean token (e.g., [^1, 2] instead of [^1][^2] or [^1] [^2]).\n"
+        "5. If a chunk contains a 'table' or 'image_transcription', you MUST explicitly acknowledge and reference it visually (e.g., 'As illustrated in the diagram [^3]...' or 'According to the data table [^1]...').\n"
+        "6. If you reference data from a table chunk, reconstruct it as a clean Markdown table in your response.\n"
+        "7. If you reference a diagram, chart, or image transcription, include a markdown image link pointing to its citation pre-signed URL (which is provided in the chunk header under 'Source Link' if present, e.g. `![Source Image](presigned_url_here)`) or reference it explicitly.\n"
+        "8. If the answer cannot be found in the provided context, state: 'I cannot find the answer in the uploaded documents.' Do not fabricate any information."
+    )
+
 # Define State Structure
 class RAGState(TypedDict):
     messages: Annotated[List[BaseMessage], add_messages]
@@ -76,7 +90,7 @@ def node_generate(state: RAGState) -> Dict[str, Any]:
     messages = state["messages"]
     chunks = state.get("reranked_chunks", [])
     
-    # Format Context Chunks with inline citations
+    # Format Context Chunks with metadata keys
     context_str = ""
     citations_map = {}
     
@@ -84,29 +98,65 @@ def node_generate(state: RAGState) -> Dict[str, Any]:
         meta = chunk.get("metadata", {})
         source_name = meta.get("source", "Unknown")
         page_num = meta.get("page_number", 1)
+        storage_path = meta.get("storage_path", source_name)
+        cite_key = f"[^{idx+1}]"
         
-        # Unique citation identifier: e.g., doc_name_PageX
-        cite_key = f"{source_name}_Page{page_num}"
+        # Dynamic content_type detection
+        if "text_as_html" in meta:
+            content_type = "table"
+        elif meta.get("file_type", "").startswith("image/") or "image" in meta.get("file_type", "").lower() or meta.get("is_image", False):
+            content_type = "image_transcription"
+        else:
+            content_type = "text"
+            
+        # Dynamic presigned download link generation for Cloudflare R2 if credentials are set
+        download_url = None
+        provider = settings.STORAGE_PROVIDER.lower()
+        if provider in ("r2", "s3") and settings.CLOUDFLARE_ACCOUNT_ID and settings.R2_ACCESS_KEY_ID:
+            try:
+                import boto3
+                from botocore.config import Config
+                
+                endpoint_url = f"https://{settings.CLOUDFLARE_ACCOUNT_ID}.r2.cloudflarestorage.com"
+                s3_client = boto3.client(
+                    "s3",
+                    endpoint_url=endpoint_url,
+                    aws_access_key_id=settings.R2_ACCESS_KEY_ID or settings.AWS_ACCESS_KEY_ID,
+                    aws_secret_access_key=settings.R2_SECRET_ACCESS_KEY or settings.AWS_SECRET_ACCESS_KEY,
+                    config=Config(signature_version="s3v4"),
+                    region_name="us-east-1"
+                )
+                bucket = settings.R2_BUCKET_NAME or settings.STORAGE_BUCKET_NAME
+                download_url = s3_client.generate_presigned_url(
+                    ClientMethod="get_object",
+                    Params={
+                        "Bucket": bucket,
+                        "Key": storage_path
+                    },
+                    ExpiresIn=3600
+                )
+            except Exception as s3_err:
+                logger.warning(f"Failed to generate R2 download URL for citation: {s3_err}")
+                
         citations_map[cite_key] = {
             "source": source_name,
             "page_number": page_num,
-            "content_preview": chunk["content"][:200] + "..."
+            "content_preview": chunk["content"][:200] + "...",
+            "download_url": download_url,
+            "index": idx + 1
         }
         
-        context_str += f"--- START CHUNK {idx+1} [Citation Key: {cite_key}] ---\n"
-        context_str += f"{chunk['content']}\n"
+        context_str += f"--- START CHUNK {cite_key} ---\n"
+        context_str += f"Source: {source_name} (Page {page_num})\n"
+        context_str += f"Content Type: {content_type}\n"
+        if download_url:
+            context_str += f"Source Link: {download_url}\n"
+        context_str += f"Content: {chunk['content']}\n"
         if "text_as_html" in meta:
             context_str += f"[Table HTML: {meta['text_as_html']}]\n"
-        context_str += f"--- END CHUNK {idx+1} ---\n\n"
+        context_str += f"--- END CHUNK ---\n\n"
         
-    system_prompt = (
-        "You are an expert enterprise research assistant. Answer the user's question using only the provided context chunks.\n"
-        "For each fact, statement, or table you reference, you MUST cite the source using the exact citation key provided in the chunk headers (e.g. [Filename.pdf_Page1]).\n"
-        "Cite the key at the end of the sentence or paragraph where the fact is mentioned (e.g. 'The revenue increased by 15% [report.pdf_Page3].').\n"
-        "If you use information from multiple chunks, include multiple citation keys (e.g. [report.pdf_Page3][slide.pdf_Page1]).\n"
-        "Be extremely rigorous about citations. Never write a statement without citing its source from the context.\n"
-        "If the answer cannot be found in the provided context, state: 'I cannot find the answer in the uploaded documents.' do not fabricate information."
-    )
+    system_prompt = LocalAgentConfig.SYSTEM_INSTRUCTIONS
     
     prompt = ChatPromptTemplate.from_messages([
         ("system", system_prompt),
@@ -135,7 +185,7 @@ def node_generate(state: RAGState) -> Dict[str, Any]:
     response_text = response.content
     
     for key, value in citations_map.items():
-        if f"[{key}]" in response_text:
+        if key in response_text:
             used_citations.append(value)
             
     return {

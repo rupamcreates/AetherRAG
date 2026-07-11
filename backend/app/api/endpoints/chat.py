@@ -17,7 +17,61 @@ from app.rag.retriever import MultiQueryExpansion, HybridRetriever, HuggingFaceR
 from pydantic import BaseModel
 from datetime import datetime
 
+import re
+from typing import Optional
+
 logger = logging.getLogger(__name__)
+
+class LocalAgentConfig:
+    SYSTEM_INSTRUCTIONS = (
+        "You are an expert enterprise research assistant. Answer the user's question using ONLY the provided context chunks.\n\n"
+        "Strict rules for citations, formatting, and explanations:\n"
+        "1. Synthesize your answer solely using the bounded context chunks. Do not include raw filename strings, file paths, or raw text suffixes in the body of your response text (e.g. do NOT write 'Paper.pdf' or 'report.txt' directly in the text unless referencing it inside the bracket citation).\n"
+        "2. Explain everything nicely and step-by-step to the user while answering their questions.\n"
+        "3. Enforce clean alphanumeric markdown citation tokens (e.g., [^1], [^2]) right after factual assertions or references to a chunk.\n"
+        "4. If duplicate or clustered citations appear for a statement, group them into a single, clean token (e.g., [^1, 2] instead of [^1][^2] or [^1] [^2]).\n"
+        "5. If a chunk contains a 'table' or 'image_transcription', you MUST explicitly acknowledge and reference it visually (e.g., 'As illustrated in the diagram [^3]...' or 'According to the data table [^1]...').\n"
+        "6. If you reference data from a table chunk, reconstruct it as a clean Markdown table in your response.\n"
+        "7. If you reference a diagram, chart, or image transcription, include a markdown image link pointing to its citation pre-signed URL (which is provided in the chunk header under 'Source Link' if present, e.g. `![Source Image](presigned_url_here)`) or reference it explicitly.\n"
+        "8. If the answer cannot be found in the provided context, state: 'I cannot find the answer in the uploaded documents.' Do not fabricate any information."
+    )
+
+class CitationStreamProcessor:
+    def __init__(self):
+        self.buffer = ""
+        self.yielded_content = ""
+
+    def process(self, token: str) -> str:
+        self.buffer += token
+        
+        # Withhold yielding if the buffer ends in the middle of a citation tag (e.g. '[', '[^', '[^1', '[^1,')
+        if re.search(r'\[\^?[\d,\s]*$', self.buffer):
+            return ""
+            
+        to_yield = self.buffer
+        self.buffer = ""
+        
+        # Clean inline duplicate citation tokens (e.g., [^1][^1] -> [^1])
+        to_yield = re.sub(r'(\[\^[\d,\s]+\])\s*\1', r'\1', to_yield)
+        
+        self.yielded_content += to_yield
+        return to_yield
+
+    def flush(self) -> str:
+        remaining = self.buffer
+        self.buffer = ""
+        
+        # Clean duplicate citations in the remaining buffer
+        remaining = re.sub(r'(\[\^[\d,\s]+\])\s*\1', r'\1', remaining)
+        
+        full_text = self.yielded_content + remaining
+        
+        # Strip trailing duplicate citation suffixes globally from the end of the response
+        cleaned = re.sub(r'(\[\^[\d,\s]+\])(?:\s*\1)+$', r'\1', full_text)
+        
+        # Return only the newly cleaned content that hasn't been yielded yet
+        new_yield = cleaned[len(self.yielded_content):]
+        return new_yield
 
 router = APIRouter()
 
@@ -41,6 +95,8 @@ class CitationOut(BaseModel):
     source: str
     page_number: int
     content_preview: str
+    download_url: Optional[str] = None
+    index: Optional[int] = None
 
 class QueryOut(BaseModel):
     answer: str
@@ -145,7 +201,15 @@ async def query_rag(
                 source_name = meta.get("source", "Unknown")
                 page_num = meta.get("page_number", 1)
                 storage_path = meta.get("storage_path", source_name)
-                cite_key = f"{source_name}_Page{page_num}"
+                cite_key = f"[^{idx+1}]"
+                
+                # Dynamic content_type detection
+                if "text_as_html" in meta:
+                    content_type = "table"
+                elif meta.get("file_type", "").startswith("image/") or "image" in meta.get("file_type", "").lower() or meta.get("is_image", False):
+                    content_type = "image_transcription"
+                else:
+                    content_type = "text"
                 
                 # Dynamic presigned download link generation for Cloudflare R2
                 download_url = None
@@ -180,23 +244,21 @@ async def query_rag(
                     "source": source_name,
                     "page_number": page_num,
                     "content_preview": chunk["content"][:200] + "...",
-                    "download_url": download_url
+                    "download_url": download_url,
+                    "index": idx + 1
                 }
-                context_str += f"--- START CHUNK {idx+1} [Citation Key: {cite_key}] ---\n"
-                context_str += f"{chunk['content']}\n"
+                context_str += f"--- START CHUNK {cite_key} ---\n"
+                context_str += f"Source: {source_name} (Page {page_num})\n"
+                context_str += f"Content Type: {content_type}\n"
+                if download_url:
+                    context_str += f"Source Link: {download_url}\n"
+                context_str += f"Content: {chunk['content']}\n"
                 if "text_as_html" in meta:
                     context_str += f"[Table HTML: {meta['text_as_html']}]\n"
-                context_str += f"--- END CHUNK {idx+1} ---\n\n"
+                context_str += f"--- END CHUNK ---\n\n"
                 
             # 5. Build Chat Prompt and load Thread History
-            system_prompt = (
-                "You are an expert enterprise research assistant. Answer the user's question using only the provided context chunks.\n"
-                "For each fact, statement, or table you reference, you MUST cite the source using the exact citation key provided in the chunk headers (e.g. [Filename.pdf_Page1]).\n"
-                "Cite the key at the end of the sentence or paragraph where the fact is mentioned (e.g. 'The revenue increased by 15% [report.pdf_Page3].').\n"
-                "If you use information from multiple chunks, include multiple citation keys (e.g. [report.pdf_Page3][slide.pdf_Page1]).\n"
-                "Be extremely rigorous about citations. Never write a statement without citing its source from the context.\n"
-                "If the answer cannot be found in the provided context, state: 'I cannot find the answer in the uploaded documents.' do not fabricate information."
-            )
+            system_prompt = LocalAgentConfig.SYSTEM_INSTRUCTIONS
             
             # Load memory history from LangGraph checkpointer
             graph = get_rag_graph()
@@ -223,20 +285,29 @@ async def query_rag(
             
             chain = prompt | llm
             
-            # 6. Stream tokens to the client in real-time
+            # 6. Stream tokens to the client in real-time with duplicate citation filter
             accumulated_answer = ""
+            processor = CitationStreamProcessor()
             async for chunk in chain.astream({
                 "context": context_str,
                 "question": query_in.message
             }):
                 token = chunk.content
-                accumulated_answer += token
-                yield f"data: {json.dumps({'token': token})}\n\n"
+                processed_token = processor.process(token)
+                if processed_token:
+                    accumulated_answer += processed_token
+                    yield f"data: {json.dumps({'token': processed_token})}\n\n"
+            
+            # Flush remaining buffer content
+            final_token = processor.flush()
+            if final_token:
+                accumulated_answer += final_token
+                yield f"data: {json.dumps({'token': final_token})}\n\n"
                 
             # 7. Extract citations actually used in the response
             used_citations = []
             for key, value in citations_map.items():
-                if f"[{key}]" in accumulated_answer:
+                if key in accumulated_answer:
                     used_citations.append(value)
                     
             # 8. Save updated chat history in memory checkpointer
