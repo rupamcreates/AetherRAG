@@ -32,7 +32,7 @@ class LocalAgentConfig:
         "4. If duplicate or clustered citations appear for a statement, group them into a single, clean token (e.g., [^1, 2] instead of [^1][^2] or [^1] [^2]).\n"
         "5. If a chunk contains a 'table' or 'image_transcription', you MUST explicitly acknowledge and reference it visually (e.g., 'As illustrated in the diagram [^3]...' or 'According to the data table [^1]...').\n"
         "6. If you reference data from a table chunk, reconstruct it as a clean Markdown table in your response.\n"
-        "7. If a document chunk contains an 'image_transcription' or an image block that visualizes the concept the user is asking about, you MUST not only textually describe it, but you MUST also output a standard markdown image syntax block: `![Image Description](ID)` where ID matches the integer string of the citation index (e.g., `![Transformer Architecture Block Diagram](3)`).\n"
+        "7. If a document chunk contains an 'image_transcription' or an image block that visualizes the concept the user is asking about, you MUST not only textually describe it, but you MUST also output a standard markdown image syntax block: ![Image Description](ID) where ID matches the integer string of the citation index (e.g., ![Transformer Architecture Block Diagram](3)).\n"
         "8. If the answer cannot be found in the provided context, state: 'I cannot find the answer in the uploaded documents.' Do not fabricate any information."
     )
 
