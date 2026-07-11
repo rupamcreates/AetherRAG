@@ -141,6 +141,7 @@ async def verify_agent_rag():
     assert "[^3]" in accumulated_answer, "Missing citation [^3] for image chunk!"
     assert "attention_paper.pdf" not in accumulated_answer, "Leaked raw filename attention_paper.pdf in response body!"
     assert "model_specs.xlsx" not in accumulated_answer, "Leaked raw filename model_specs.xlsx in response body!"
+    assert "](3)" in accumulated_answer or "](2)" in accumulated_answer or "](1)" in accumulated_answer, "Missing citation ID-based markdown image syntax (e.g. ![...](3))!"
     
     print("\nVerification successful! All checks passed.")
     

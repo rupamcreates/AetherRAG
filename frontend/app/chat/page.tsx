@@ -445,6 +445,46 @@ export default function ChatDashboard() {
             {children}
           </code>
         );
+      },
+      img: ({ src, alt }: any) => {
+        const citationIndex = parseInt(src || '', 10);
+        const citation = !isNaN(citationIndex) 
+          ? citations.find(c => c.index === citationIndex) 
+          : null;
+          
+        if (!citation || !citation.download_url) {
+          return (
+            <div className="my-4 p-4 rounded-lg border border-dashed border-zinc-850 bg-zinc-900/30 text-xs text-zinc-500 text-center flex flex-col items-center justify-center gap-1">
+              <AlertCircle className="h-4 w-4 text-zinc-650 animate-pulse" />
+              <span>Image placeholder {src ? `[^${src}]` : ''} - Pre-signed link unavailable or loading failed</span>
+            </div>
+          );
+        }
+
+        return (
+          <div className="relative group">
+            <img
+              src={citation.download_url}
+              alt={alt || "Multimodal Layout Image"}
+              className="my-4 rounded-lg border border-zinc-800 bg-zinc-900/50 max-w-full h-auto max-h-[350px] object-contain shadow-xl mx-auto block transition-transform duration-200 group-hover:scale-[1.01]"
+              onError={(e) => {
+                e.currentTarget.style.display = 'none';
+                const fallbackEl = document.getElementById(`img-fallback-${citationIndex}`);
+                if (fallbackEl) {
+                  fallbackEl.style.display = 'flex';
+                }
+              }}
+            />
+            <div 
+              id={`img-fallback-${citationIndex}`}
+              style={{ display: 'none' }}
+              className="my-4 p-4 rounded-lg border border-dashed border-zinc-850 bg-zinc-900/40 text-xs text-zinc-500 text-center flex-col items-center justify-center gap-1"
+            >
+              <AlertCircle className="h-4 w-4 text-rose-500/70" />
+              <span>Failed to render image view: pre-signed R2 asset key expired or connection reset.</span>
+            </div>
+          </div>
+        );
       }
     };
 
