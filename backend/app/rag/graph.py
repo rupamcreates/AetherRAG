@@ -139,7 +139,8 @@ def node_generate(state: RAGState) -> Dict[str, Any]:
         # Dynamic presigned download link generation for Cloudflare R2 if credentials are set
         download_url = None
         if meta.get("is_image", False) and meta.get("image_base64"):
-            download_url = f"data:image/png;base64,{meta['image_base64']}"
+            clean_base64 = meta['image_base64'].replace("\n", "").replace("\r", "").replace(" ", "")
+            download_url = f"data:image/png;base64,{clean_base64}"
         else:
             provider = settings.STORAGE_PROVIDER.lower()
             if provider in ("r2", "s3") and settings.CLOUDFLARE_ACCOUNT_ID and settings.R2_ACCESS_KEY_ID:
@@ -256,7 +257,7 @@ def get_rag_graph():
     # PostgresSaver uses standard connection pool from psycopg_pool
     # Let's handle cases where database is not configured (e.g. unit tests or local dev checkouts)
     try:
-        pool = ConnectionPool(conninfo=connection_string, min_size=1, max_size=5, kwargs={"autocommit": True})
+        pool = ConnectionPool(conninfo=connection_string, min_size=1, max_size=5, kwargs={"autocommit": True, "prepare_threshold": None})
         checkpointer = PostgresSaver(pool)
         # Ensure saver tables exist
         checkpointer.setup()

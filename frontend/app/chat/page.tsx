@@ -482,7 +482,7 @@ export default function ChatDashboard() {
         return (
           <div className="relative group">
             <img
-              src={citation.download_url}
+              src={citation.download_url.startsWith('data:image/') ? citation.download_url.replace(/\s/g, '') : citation.download_url}
               alt={alt || "Multimodal Layout Image"}
               className="my-4 rounded-lg border border-zinc-800 bg-zinc-900/50 max-w-full h-auto max-h-[350px] object-contain shadow-xl mx-auto block transition-transform duration-200 group-hover:scale-[1.01]"
               onError={(e) => {

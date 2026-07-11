@@ -247,7 +247,8 @@ async def query_rag(
                 # Dynamic presigned download link generation for Cloudflare R2
                 download_url = None
                 if meta.get("is_image", False) and meta.get("image_base64"):
-                    download_url = f"data:image/png;base64,{meta['image_base64']}"
+                    clean_base64 = meta['image_base64'].replace("\n", "").replace("\r", "").replace(" ", "")
+                    download_url = f"data:image/png;base64,{clean_base64}"
                 else:
                     provider = settings.STORAGE_PROVIDER.lower()
                     if provider in ("r2", "s3") and settings.CLOUDFLARE_ACCOUNT_ID and settings.R2_ACCESS_KEY_ID:
