@@ -7,6 +7,7 @@ from langgraph.checkpoint.postgres import PostgresSaver
 from psycopg_pool import ConnectionPool
 from app.core.config import settings
 from app.db.session import SessionLocal
+from app.db.models import Document
 from app.rag.retriever import MultiQueryExpansion, HybridRetriever, HuggingFaceReranker, reciprocal_rank_fusion
 from langchain_groq import ChatGroq
 from langchain_core.prompts import ChatPromptTemplate
@@ -138,6 +139,17 @@ def node_generate(state: RAGState) -> Dict[str, Any]:
             except Exception as s3_err:
                 logger.warning(f"Failed to generate R2 download URL for citation: {s3_err}")
                 
+        if not download_url:
+            db_session = SessionLocal()
+            try:
+                doc = db_session.query(Document).filter(Document.storage_path == storage_path).first()
+                if doc:
+                    download_url = f"{settings.BACKEND_URL}/api/documents/{doc.id}/download"
+            except Exception as db_err:
+                logger.warning(f"Failed to fetch document from DB for local download link: {db_err}")
+            finally:
+                db_session.close()
+                
         citations_map[cite_key] = {
             "source": source_name,
             "page_number": page_num,
@@ -189,7 +201,7 @@ def node_generate(state: RAGState) -> Dict[str, Any]:
             used_citations.append(value)
             
     return {
-        "messages": [AIMessage(content=response.content)],
+        "messages": [AIMessage(content=response.content, additional_kwargs={"citations": used_citations})],
         "answer": response.content,
         "citations": used_citations
     }

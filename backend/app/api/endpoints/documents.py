@@ -232,3 +232,37 @@ def get_task_status(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to query task status: {e}"
         )
+
+from fastapi.responses import FileResponse
+import os
+
+@router.get("/{document_id}/download")
+def download_document_file(
+    document_id: uuid.UUID,
+    db: Session = Depends(get_db),
+    user_id: str = Depends(get_current_user)
+):
+    doc = db.query(Document).filter(Document.id == document_id, Document.user_id == user_id).first()
+    if not doc:
+        raise HTTPException(status_code=404, detail="Document not found.")
+        
+    provider = settings.STORAGE_PROVIDER.lower()
+    if provider == "local":
+        file_path = os.path.join(settings.LOCAL_STORAGE_DIR, doc.storage_path)
+        if not os.path.exists(file_path):
+            raise HTTPException(status_code=404, detail="File not found on disk.")
+        return FileResponse(file_path, filename=doc.name)
+        
+    elif provider == "supabase":
+        storage = StorageService.get_storage()
+        import tempfile
+        temp_dir = tempfile.gettempdir()
+        temp_path = os.path.join(temp_dir, doc.name)
+        try:
+            storage.download_file(doc.storage_path, temp_path)
+            return FileResponse(temp_path, filename=doc.name)
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Failed to fetch file from Supabase storage: {e}")
+            
+    else:
+        raise HTTPException(status_code=400, detail="Downloads only supported for local and Supabase storage providers via this endpoint.")

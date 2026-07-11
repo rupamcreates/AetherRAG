@@ -12,6 +12,7 @@ class Settings(BaseSettings):
     # API Server
     PORT: int = 8000
     HOST: str = "0.0.0.0"
+    BACKEND_URL: str = "http://localhost:8000"
 
     # Database
     DATABASE_URL: str = "postgresql://postgres:postgres@localhost:5432/rag_db"

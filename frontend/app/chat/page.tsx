@@ -162,6 +162,21 @@ export default function ChatDashboard() {
       if (res.ok) {
         const data = await res.json();
         setMessages(data);
+        
+        const historyCitations: Citation[] = [];
+        data.forEach((msg: any) => {
+          if (msg.role === "assistant" && msg.citations && msg.citations.length > 0) {
+            msg.citations.forEach((cite: any) => {
+              if (!historyCitations.some(c => 
+                (c.source === cite.source && c.page_number === cite.page_number) ||
+                (c.index !== undefined && cite.index !== undefined && c.index === cite.index)
+              )) {
+                historyCitations.push(cite);
+              }
+            });
+          }
+        });
+        setCitations(historyCitations);
       }
     } catch (err) {
       console.error("Error fetching message history:", err);
@@ -278,44 +293,47 @@ export default function ChatDashboard() {
 
       while (isStreaming) {
         const { value, done } = await reader.read();
+        
+        if (value) {
+          const chunk = decoder.decode(value, { stream: true });
+          const lines = chunk.split("\n");
+          for (const line of lines) {
+            const trimmed = line.trim();
+            if (!trimmed.startsWith("data: ")) continue;
+            
+            try {
+              const parsed = JSON.parse(trimmed.slice(6));
+              if (parsed.token !== undefined) {
+                assistantAnswer += parsed.token;
+                setMessages([
+                  ...updatedMessages,
+                  { role: "assistant" as const, content: assistantAnswer }
+                ]);
+              } else if (parsed.citations !== undefined) {
+                if (parsed.citations.length > 0) {
+                  setCitations((prev) => {
+                    const merged = [...prev];
+                    parsed.citations.forEach((newCite: Citation) => {
+                      const exists = merged.some(
+                        (c) =>
+                          (c.source === newCite.source && c.page_number === newCite.page_number) ||
+                          (c.index !== undefined && newCite.index !== undefined && c.index === newCite.index)
+                      );
+                      if (!exists) merged.push(newCite);
+                    });
+                    return merged;
+                  });
+                }
+              }
+            } catch (e) {
+              // Ignore partial/malformed JSON during chunk boundaries
+            }
+          }
+        }
+
         if (done) {
           isStreaming = false;
           break;
-        }
-
-        const chunk = decoder.decode(value, { stream: true });
-        const lines = chunk.split("\n");
-        for (const line of lines) {
-          const trimmed = line.trim();
-          if (!trimmed.startsWith("data: ")) continue;
-          
-          try {
-            const parsed = JSON.parse(trimmed.slice(6));
-            if (parsed.token !== undefined) {
-              assistantAnswer += parsed.token;
-              setMessages([
-                ...updatedMessages,
-                { role: "assistant" as const, content: assistantAnswer }
-              ]);
-            } else if (parsed.citations !== undefined) {
-              if (parsed.citations.length > 0) {
-                setCitations((prev) => {
-                  const merged = [...prev];
-                  parsed.citations.forEach((newCite: Citation) => {
-                    const exists = merged.some(
-                      (c) =>
-                        (c.source === newCite.source && c.page_number === newCite.page_number) ||
-                        (c.index !== undefined && newCite.index !== undefined && c.index === newCite.index)
-                    );
-                    if (!exists) merged.push(newCite);
-                  });
-                  return merged;
-                });
-              }
-            }
-          } catch (e) {
-            // Ignore partial/malformed JSON during chunk boundaries
-          }
         }
       }
       

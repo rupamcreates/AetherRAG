@@ -7,7 +7,7 @@ from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 from sqlalchemy import text
 from app.api.deps import get_db, get_current_user
-from app.db.models import ChatThread
+from app.db.models import ChatThread, Document
 from app.rag.graph import get_rag_graph
 from langchain_core.messages import HumanMessage, AIMessage
 from langchain_core.prompts import ChatPromptTemplate
@@ -105,6 +105,7 @@ class QueryOut(BaseModel):
 class MessageHistoryOut(BaseModel):
     role: str
     content: str
+    citations: Optional[List[CitationOut]] = None
 
 @router.post("/threads", response_model=ThreadOut, status_code=status.HTTP_201_CREATED)
 def create_thread(
@@ -240,6 +241,14 @@ async def query_rag(
                     except Exception as s3_err:
                         logger.warning(f"Failed to generate R2 download URL for citation: {s3_err}")
                 
+                if not download_url:
+                    try:
+                        doc = db.query(Document).filter(Document.storage_path == storage_path).first()
+                        if doc:
+                            download_url = f"{settings.BACKEND_URL}/api/documents/{doc.id}/download"
+                    except Exception as db_err:
+                        logger.warning(f"Failed to fetch document from DB for local download link: {db_err}")
+                
                 citations_map[cite_key] = {
                     "source": source_name,
                     "page_number": page_num,
@@ -314,7 +323,7 @@ async def query_rag(
             try:
                 new_messages = history + [
                     HumanMessage(content=query_in.message),
-                    AIMessage(content=accumulated_answer)
+                    AIMessage(content=accumulated_answer, additional_kwargs={"citations": used_citations})
                 ]
                 graph.update_state(config, {"messages": new_messages})
             except Exception as se:
@@ -360,7 +369,8 @@ def get_thread_history(
             if isinstance(msg, HumanMessage):
                 formatted_history.append(MessageHistoryOut(role="user", content=msg.content))
             elif isinstance(msg, AIMessage):
-                formatted_history.append(MessageHistoryOut(role="assistant", content=msg.content))
+                cites = msg.additional_kwargs.get("citations")
+                formatted_history.append(MessageHistoryOut(role="assistant", content=msg.content, citations=cites))
                 
         return formatted_history
     except Exception as e:
