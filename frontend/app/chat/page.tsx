@@ -291,12 +291,15 @@ export default function ChatDashboard() {
       // Add a blank placeholder assistant message that we will append to
       setMessages([...updatedMessages, { role: "assistant" as const, content: "" }]);
 
+      let buffer = "";
       while (isStreaming) {
         const { value, done } = await reader.read();
         
         if (value) {
-          const chunk = decoder.decode(value, { stream: true });
-          const lines = chunk.split("\n");
+          buffer += decoder.decode(value, { stream: !done });
+          const lines = buffer.split("\n");
+          buffer = lines.pop() || "";
+          
           for (const line of lines) {
             const trimmed = line.trim();
             if (!trimmed.startsWith("data: ")) continue;
@@ -333,6 +336,29 @@ export default function ChatDashboard() {
 
         if (done) {
           isStreaming = false;
+          // Process final remaining buffer line
+          const finalTrimmed = buffer.trim();
+          if (finalTrimmed.startsWith("data: ")) {
+            try {
+              const parsed = JSON.parse(finalTrimmed.slice(6));
+              if (parsed.citations !== undefined && parsed.citations.length > 0) {
+                setCitations((prev) => {
+                  const merged = [...prev];
+                  parsed.citations.forEach((newCite: Citation) => {
+                    const idx = merged.findIndex(c => c.index === newCite.index);
+                    if (idx === -1) {
+                      merged.push(newCite);
+                    } else {
+                      merged[idx] = { ...merged[idx], ...newCite };
+                    }
+                  });
+                  return merged;
+                });
+              }
+            } catch (e) {
+              // Ignore
+            }
+          }
           break;
         }
       }
