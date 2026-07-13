@@ -36,6 +36,7 @@ interface Thread {
 interface Message {
   role: "user" | "assistant";
   content: string;
+  citations?: Citation[];
 }
 
 interface DocumentInfo {
@@ -326,6 +327,17 @@ export default function ChatDashboard() {
                     });
                     return merged;
                   });
+                  setMessages((prev) => {
+                    const updated = [...prev];
+                    const lastIndex = updated.length - 1;
+                    if (lastIndex >= 0 && updated[lastIndex].role === "assistant") {
+                      updated[lastIndex] = {
+                        ...updated[lastIndex],
+                        citations: parsed.citations
+                      };
+                    }
+                    return updated;
+                  });
                 }
               }
             } catch (e) {
@@ -354,6 +366,17 @@ export default function ChatDashboard() {
                   });
                   return merged;
                 });
+                setMessages((prev) => {
+                  const updated = [...prev];
+                  const lastIndex = updated.length - 1;
+                  if (lastIndex >= 0 && updated[lastIndex].role === "assistant") {
+                    updated[lastIndex] = {
+                      ...updated[lastIndex],
+                      citations: parsed.citations
+                    };
+                  }
+                  return updated;
+                });
               }
             } catch (e) {
               // Ignore
@@ -378,8 +401,9 @@ export default function ChatDashboard() {
   };
 
   // Find citation information by index
-  const handleCitationClickByIndex = (index: number) => {
-    const citation = citations.find((c) => c.index === index);
+  const handleCitationClickByIndex = (index: number, messageCitations?: Citation[]) => {
+    const activeCites = messageCitations || citations;
+    const citation = activeCites.find((c) => c.index === index);
     if (citation) {
       setActiveCitation(citation);
     } else {
@@ -407,63 +431,65 @@ export default function ChatDashboard() {
     }
   };
 
-  // Parse raw text and extract citation pills (e.g. [~1], [~1, 2], [~1, ~4])
-  const parseCitationsAndText = (text: string) => {
-    const regex = /(\[~[\d,\s\~]+\])/g;
-    const parts = text.split(regex);
-    if (parts.length === 1) return text;
-
-    return parts.map((part, i) => {
-      if (i % 2 === 1) {
-        const cleanString = part.replace(/[\[\]~]/g, ''); // "1, 4"
-        const ids = cleanString
-          .split(',')
-          .map(id => id.trim())
-          .filter(id => id.length > 0);
-
-        return (
-          <span key={i} className="inline-flex gap-1 mx-0.5 align-baseline">
-            {ids.map(id => {
-              const citationIndex = parseInt(id, 10);
-              const citation = citations.find(c => c.index === citationIndex);
-
-              return (
-                <a
-                  key={id}
-                  href={citation?.download_url || "#"}
-                  target={citation?.download_url ? "_blank" : undefined}
-                  rel="noopener noreferrer"
-                  onClick={(e) => {
-                    if (!citation?.download_url) {
-                      e.preventDefault();
-                    }
-                    handleCitationClickByIndex(citationIndex);
-                  }}
-                  className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-blue-600/10 text-blue-400 border border-blue-500/20 hover:bg-blue-600/20 hover:text-blue-300 transition-all cursor-pointer select-none"
-                >
-                  {id}
-                </a>
-              );
-            })}
-          </span>
-        );
-      }
-      return part;
-    });
-  };
-
-  // Helper to map and process children elements
-  const processChildren = (children: any): any => {
-    return React.Children.map(children, (child) => {
-      if (typeof child === 'string') {
-        return parseCitationsAndText(child);
-      }
-      return child;
-    });
-  };
-
   // Parse assistant response to render clickable citations & GFM markdown
-  const renderMessageContent = (content: string) => {
+  const renderMessageContent = (content: string, messageCitations?: Citation[]) => {
+    const activeCites = messageCitations || citations;
+
+    // Parse raw text and extract citation pills (e.g. [~1], [~1, 2], [~1, ~4])
+    const parseCitationsAndText = (text: string) => {
+      const regex = /(\[~[\d,\s\~]+\])/g;
+      const parts = text.split(regex);
+      if (parts.length === 1) return text;
+
+      return parts.map((part, i) => {
+        if (i % 2 === 1) {
+          const cleanString = part.replace(/[\[\]~]/g, ''); // "1, 4"
+          const ids = cleanString
+            .split(',')
+            .map(id => id.trim())
+            .filter(id => id.length > 0);
+
+          return (
+            <span key={i} className="inline-flex gap-1 mx-0.5 align-baseline">
+              {ids.map(id => {
+                const citationIndex = parseInt(id, 10);
+                const citation = activeCites.find(c => c.index === citationIndex);
+
+                return (
+                  <a
+                    key={id}
+                    href={citation?.download_url || "#"}
+                    target={citation?.download_url ? "_blank" : undefined}
+                    rel="noopener noreferrer"
+                    onClick={(e) => {
+                      if (!citation?.download_url) {
+                        e.preventDefault();
+                      }
+                      handleCitationClickByIndex(citationIndex, activeCites);
+                    }}
+                    className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-blue-600/10 text-blue-400 border border-blue-500/20 hover:bg-blue-600/20 hover:text-blue-300 transition-all cursor-pointer select-none"
+                  >
+                    {id}
+                  </a>
+                );
+              })}
+            </span>
+          );
+        }
+        return part;
+      });
+    };
+
+    // Helper to map and process children elements
+    const processChildren = (children: any): any => {
+      return React.Children.map(children, (child) => {
+        if (typeof child === 'string') {
+          return parseCitationsAndText(child);
+        }
+        return child;
+      });
+    };
+
     const markdownComponents = {
       p: ({ children }: any) => <span className="block mb-2 last:mb-0">{processChildren(children)}</span>,
       li: ({ children }: any) => <li className="ml-4 list-disc">{processChildren(children)}</li>,
@@ -493,7 +519,7 @@ export default function ChatDashboard() {
       img: ({ src, alt }: any) => {
         const citationIndex = parseInt(src || '', 10);
         const citation = !isNaN(citationIndex) 
-          ? citations.find(c => c.index === citationIndex) 
+          ? activeCites.find(c => c.index === citationIndex) 
           : null;
           
         if (!citation || !citation.download_url) {
@@ -764,7 +790,7 @@ export default function ChatDashboard() {
                     >
                       <div>
                         {msg.role === "assistant" ? (
-                          renderMessageContent(msg.content)
+                          renderMessageContent(msg.content, msg.citations)
                         ) : (
                           <div className="whitespace-pre-line">{msg.content}</div>
                         )}
