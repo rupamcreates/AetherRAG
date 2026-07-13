@@ -771,42 +771,45 @@ export default function ChatDashboard() {
               </div>
             ) : (
               <div className="space-y-6 max-w-4xl mx-auto">
-                {messages.map((msg, idx) => (
-                  <div
-                    key={idx}
-                    className={`flex gap-3 max-w-[85%] ${
-                      msg.role === "user" ? "ml-auto flex-row-reverse" : "mr-auto"
-                    }`}
-                  >
+                {messages.map((msg, idx) => {
+                  if (msg.role === "assistant" && !msg.content) return null;
+                  return (
                     <div
-                      className={`flex h-8 w-8 shrink-0 select-none items-center justify-center rounded-lg text-xs font-semibold ${
-                        msg.role === "user"
-                          ? "bg-zinc-800 text-zinc-200 border border-zinc-700"
-                          : "bg-gradient-to-tr from-indigo-600 to-cyan-500 text-white"
+                      key={idx}
+                      className={`flex gap-3 max-w-[85%] ${
+                        msg.role === "user" ? "ml-auto flex-row-reverse" : "mr-auto"
                       }`}
                     >
-                      {msg.role === "user" ? "U" : "AI"}
-                    </div>
+                      <div
+                        className={`flex h-8 w-8 shrink-0 select-none items-center justify-center rounded-lg text-xs font-semibold ${
+                          msg.role === "user"
+                            ? "bg-zinc-800 text-zinc-200 border border-zinc-700"
+                            : "bg-gradient-to-tr from-indigo-600 to-cyan-500 text-white"
+                        }`}
+                      >
+                        {msg.role === "user" ? "U" : "AI"}
+                      </div>
 
-                    <div
-                      className={`rounded-2xl px-4 py-3 text-sm leading-relaxed border ${
-                        msg.role === "user"
-                          ? "bg-zinc-900 border-zinc-800 text-zinc-100"
-                          : "bg-zinc-950 border-zinc-800/80 text-zinc-300"
-                      }`}
-                    >
-                      <div>
-                        {msg.role === "assistant" ? (
-                          renderMessageContent(msg.content, msg.citations)
-                        ) : (
-                          <div className="whitespace-pre-line">{msg.content}</div>
-                        )}
+                      <div
+                        className={`rounded-2xl px-4 py-3 text-sm leading-relaxed border ${
+                          msg.role === "user"
+                            ? "bg-zinc-900 border-zinc-800 text-zinc-100"
+                            : "bg-zinc-950 border-zinc-800/80 text-zinc-300"
+                        }`}
+                      >
+                        <div>
+                          {msg.role === "assistant" ? (
+                            renderMessageContent(msg.content, msg.citations)
+                          ) : (
+                            <div className="whitespace-pre-line">{msg.content}</div>
+                          )}
+                        </div>
                       </div>
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
                 
-                {loadingQuery && (
+                {loadingQuery && !(messages.length > 0 && messages[messages.length - 1].role === "assistant" && messages[messages.length - 1].content.length > 0) && (
                   <ChatMessageSkeleton currentStage={currentStage} />
                 )}
                 
