@@ -17,7 +17,9 @@ import {
   FileCode,
   BookOpen,
   ArrowLeft,
-  RefreshCw
+  RefreshCw,
+  ChevronLeft,
+  ChevronRight
 } from "lucide-react";
 import DocumentUploader from "@/components/DocumentUploader";
 import ReactMarkdown from "react-markdown";
@@ -74,6 +76,7 @@ export default function ChatDashboard() {
   const [activeCitation, setActiveCitation] = useState<Citation | null>(null);
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
   const [currentStage, setCurrentStage] = useState<string>("initiating");
+  const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   
   // Loading indicators
   const [loadingThreads, setLoadingThreads] = useState(true);
@@ -592,8 +595,12 @@ export default function ChatDashboard() {
 
       {/* Sidebar Panel */}
       <aside
-        className={`fixed inset-y-0 left-0 z-30 flex w-80 flex-col border-r border-zinc-800 bg-zinc-900/90 backdrop-blur-md transition-transform duration-300 lg:static lg:translate-x-0 ${
-          mobileSidebarOpen ? "translate-x-0" : "-translate-x-full"
+        className={`fixed inset-y-0 left-0 z-30 flex flex-col bg-zinc-900/90 backdrop-blur-md transition-all duration-300 ease-in-out ${
+          isSidebarOpen
+            ? "w-80 opacity-100 translate-x-0 lg:static border-r border-zinc-800"
+            : "w-0 opacity-0 -translate-x-full lg:static pointer-events-none"
+        } ${
+          mobileSidebarOpen ? "translate-x-0 w-80 opacity-100 border-r border-zinc-800" : ""
         }`}
       >
         {/* Sidebar Header */}
@@ -747,9 +754,17 @@ export default function ChatDashboard() {
       </aside>
 
       {/* Main Conversation Window */}
-      <section className="flex-1 flex flex-col min-w-0 bg-zinc-950">
+      <section className="flex-1 flex flex-col min-w-0 bg-zinc-950 relative">
+        {/* Sidebar Collapse Toggle Button */}
+        <button
+          onClick={() => setIsSidebarOpen(!isSidebarOpen)}
+          className="absolute top-4 left-4 z-50 p-1.5 rounded-lg border border-zinc-800 bg-zinc-900 text-zinc-400 hover:text-white transition-all hidden lg:block cursor-pointer"
+        >
+          {isSidebarOpen ? <ChevronLeft className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+        </button>
+
         {/* Chat Header */}
-        <div className="flex h-16 items-center border-b border-zinc-800/80 px-6 shrink-0 lg:pl-6 pl-16">
+        <div className="flex h-16 items-center border-b border-zinc-800/80 px-6 shrink-0 pl-16">
           <div className="flex flex-col">
             <span className="text-xs text-zinc-500 font-semibold uppercase tracking-widest">Active Chat</span>
             <span className="text-sm font-bold text-zinc-200 truncate max-w-md">
