@@ -26,6 +26,7 @@ import remarkMath from "remark-math";
 import rehypeKatex from "rehype-katex";
 import "katex/dist/katex.min.css";
 import React from "react";
+import { ChatMessageSkeleton } from "./ChatMessageSkeleton";
 
 interface Thread {
   id: string;
@@ -72,6 +73,7 @@ export default function ChatDashboard() {
   const [loadingQuery, setLoadingQuery] = useState(false);
   const [activeCitation, setActiveCitation] = useState<Citation | null>(null);
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
+  const [currentStage, setCurrentStage] = useState<string>("initiating");
   
   // Loading indicators
   const [loadingThreads, setLoadingThreads] = useState(true);
@@ -259,6 +261,7 @@ export default function ChatDashboard() {
     setInputMessage("");
     setLoadingQuery(true);
     setActiveCitation(null);
+    setCurrentStage("initiating");
 
     // Append user message immediately
     const updatedMessages = [...messages, { role: "user" as const, content: queryText }];
@@ -313,6 +316,8 @@ export default function ChatDashboard() {
                   ...updatedMessages,
                   { role: "assistant" as const, content: assistantAnswer }
                 ]);
+              } else if (parsed.stage !== undefined) {
+                setCurrentStage(parsed.stage);
               } else if (parsed.citations !== undefined) {
                 if (parsed.citations.length > 0) {
                   setCitations((prev) => {
@@ -353,7 +358,9 @@ export default function ChatDashboard() {
           if (finalTrimmed.startsWith("data: ")) {
             try {
               const parsed = JSON.parse(finalTrimmed.slice(6));
-              if (parsed.citations !== undefined && parsed.citations.length > 0) {
+              if (parsed.stage !== undefined) {
+                setCurrentStage(parsed.stage);
+              } else if (parsed.citations !== undefined && parsed.citations.length > 0) {
                 setCitations((prev) => {
                   const merged = [...prev];
                   parsed.citations.forEach((newCite: Citation) => {
@@ -800,15 +807,7 @@ export default function ChatDashboard() {
                 ))}
                 
                 {loadingQuery && (
-                  <div className="flex gap-3 mr-auto max-w-[80%]">
-                    <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-gradient-to-tr from-indigo-600 to-cyan-500 text-white">
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                    </div>
-                    <div className="rounded-2xl border border-zinc-800/80 bg-zinc-950 px-4 py-3 text-sm text-zinc-500 flex items-center gap-2">
-                      <RefreshCw className="h-4 w-4 animate-spin text-indigo-400" />
-                      Analyzing knowledge graphs & formulating response...
-                    </div>
-                  </div>
+                  <ChatMessageSkeleton currentStage={currentStage} />
                 )}
                 
                 <div ref={chatEndRef} />

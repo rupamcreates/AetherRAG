@@ -186,6 +186,7 @@ async def query_rag(
     async def event_generator():
         try:
             # 1. Run Query Expansion
+            yield f"data: {json.dumps({'stage': 'QUERY_EXPANSION'})}\n\n"
             start_mq = time.perf_counter()
             mq = MultiQueryExpansion()
             queries = mq.expand_query(query_in.message)
@@ -193,6 +194,7 @@ async def query_rag(
             logger.info(f"PERF: Multi-Query Expansion took {mq_duration:.3f}ms")
             
             # 2. Run Hybrid Retrieval (Vector + Full-Text Search)
+            yield f"data: {json.dumps({'stage': 'HYBRID_RETRIEVAL'})}\n\n"
             start_retrieval = time.perf_counter()
             retriever = HybridRetriever(db)
             all_hits = []
@@ -205,6 +207,7 @@ async def query_rag(
             logger.info(f"PERF: Hybrid Retrieval took {retrieval_duration:.3f}ms")
             
             # 3. Run Reranking
+            yield f"data: {json.dumps({'stage': 'RERANKING'})}\n\n"
             start_rerank = time.perf_counter()
             reranker = HuggingFaceReranker()
             top_chunks = reranker.rerank(query_in.message, combined_hits, top_k=5)
@@ -357,6 +360,7 @@ async def query_rag(
             chain = prompt | llm
             
             # 6. Stream tokens to the client in real-time with duplicate citation filter
+            yield f"data: {json.dumps({'stage': 'GENERATION'})}\n\n"
             accumulated_answer = ""
             processor = CitationStreamProcessor()
             async for chunk in chain.astream({
