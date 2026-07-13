@@ -45,6 +45,7 @@ class HybridRetriever:
 
     def vector_search(self, query: str, user_id: str, limit: int = 15) -> List[Dict[str, Any]]:
         """Performs vector search in PostgreSQL using pgvector."""
+        start_time = time.perf_counter()
         try:
             query_vector = self.embeddings.embed_query(query)
             # Use raw SQL for pgvector compatibility and efficiency
@@ -71,6 +72,8 @@ class HybridRetriever:
                     "metadata": row[2],
                     "score": 1 - row[3]  # Convert distance (0 to 2) to similarity score
                 })
+            duration_ms = (time.perf_counter() - start_time) * 1000.0
+            logger.info(f"PERF: pgvector Vector Search took {duration_ms:.3f}ms for query: '{query}'")
             return hits
         except Exception as e:
             logger.error(f"Vector search failed: {e}", exc_info=True)
@@ -78,6 +81,7 @@ class HybridRetriever:
 
     def keyword_search(self, query: str, user_id: str, limit: int = 15) -> List[Dict[str, Any]]:
         """Performs PostgreSQL Full-Text Search as lexical search."""
+        start_time = time.perf_counter()
         try:
             sql = text("""
                 SELECT dc.id, dc.content, dc.chunk_metadata, ts_rank_cd(to_tsvector('english', dc.content), plainto_tsquery('english', :query)) AS rank
@@ -103,6 +107,8 @@ class HybridRetriever:
                     "metadata": row[2],
                     "score": row[3]
                 })
+            duration_ms = (time.perf_counter() - start_time) * 1000.0
+            logger.info(f"PERF: FTS Keyword Search took {duration_ms:.3f}ms for query: '{query}'")
             return hits
         except Exception as e:
             logger.error(f"Keyword search failed: {e}", exc_info=True)

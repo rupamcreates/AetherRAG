@@ -1,7 +1,10 @@
 import os
 import uuid
 import sys
+import logging
 from sqlalchemy import text
+
+logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
 
 # Add current directory to path to allow importing app
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))

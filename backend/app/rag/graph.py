@@ -1,4 +1,5 @@
 import logging
+import time
 from typing import List, Dict, Any, TypedDict, Annotated
 from langchain_core.messages import BaseMessage, SystemMessage, HumanMessage, AIMessage
 from langgraph.graph.message import add_messages
@@ -45,8 +46,11 @@ def node_expand_queries(state: RAGState) -> Dict[str, Any]:
     messages = state["messages"]
     last_message = messages[-1].content if messages else ""
     
+    start_mq = time.perf_counter()
     mq = MultiQueryExpansion()
     queries = mq.expand_query(last_message)
+    mq_duration = (time.perf_counter() - start_mq) * 1000.0
+    logger.info(f"PERF: Multi-Query Expansion took {mq_duration:.3f}ms")
     return {"queries": queries}
 
 # Retrieval Node (Parallel Vector + FTS search & RRF)
@@ -60,16 +64,19 @@ def node_retrieve(state: RAGState) -> Dict[str, Any]:
         
     db = SessionLocal()
     try:
+        start_retrieval = time.perf_counter()
         retriever = HybridRetriever(db)
         all_hits = []
         
         # Run retrieval for each query variation
         for q in queries:
-            hits = retriever.retrieve_hybrid(q, user_id, limit=15)
+            hits = retriever.retrieve_hybrid(q, user_id, limit=10)
             all_hits.append(hits)
             
         # Combine all retrieval results using RRF
-        combined_hits = reciprocal_rank_fusion(all_hits, limit=20)
+        combined_hits = reciprocal_rank_fusion(all_hits, limit=10)
+        retrieval_duration = (time.perf_counter() - start_retrieval) * 1000.0
+        logger.info(f"PERF: Hybrid Retrieval took {retrieval_duration:.3f}ms")
         return {"retrieved_chunks": combined_hits}
     finally:
         db.close()
@@ -81,8 +88,11 @@ def node_rerank(state: RAGState) -> Dict[str, Any]:
     last_query = messages[-1].content if messages else ""
     candidates = state.get("retrieved_chunks", [])
     
+    start_rerank = time.perf_counter()
     reranker = HuggingFaceReranker()
     top_chunks = reranker.rerank(last_query, candidates, top_k=5)
+    rerank_duration = (time.perf_counter() - start_rerank) * 1000.0
+    logger.info(f"PERF: Reranking took {rerank_duration:.3f}ms")
     return {"reranked_chunks": top_chunks}
 
 # Response Generation Node

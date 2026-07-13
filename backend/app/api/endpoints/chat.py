@@ -16,7 +16,7 @@ from app.core.config import settings
 from app.rag.retriever import MultiQueryExpansion, HybridRetriever, HuggingFaceReranker, reciprocal_rank_fusion
 from pydantic import BaseModel
 from datetime import datetime
-
+import time
 import re
 from typing import Optional
 
@@ -186,21 +186,30 @@ async def query_rag(
     async def event_generator():
         try:
             # 1. Run Query Expansion
+            start_mq = time.perf_counter()
             mq = MultiQueryExpansion()
             queries = mq.expand_query(query_in.message)
+            mq_duration = (time.perf_counter() - start_mq) * 1000.0
+            logger.info(f"PERF: Multi-Query Expansion took {mq_duration:.3f}ms")
             
             # 2. Run Hybrid Retrieval (Vector + Full-Text Search)
+            start_retrieval = time.perf_counter()
             retriever = HybridRetriever(db)
             all_hits = []
             for q in queries:
-                hits = retriever.retrieve_hybrid(q, user_id, limit=15)
+                hits = retriever.retrieve_hybrid(q, user_id, limit=10)
                 all_hits.append(hits)
                 
-            combined_hits = reciprocal_rank_fusion(all_hits, limit=20)
+            combined_hits = reciprocal_rank_fusion(all_hits, limit=10)
+            retrieval_duration = (time.perf_counter() - start_retrieval) * 1000.0
+            logger.info(f"PERF: Hybrid Retrieval took {retrieval_duration:.3f}ms")
             
             # 3. Run Reranking
+            start_rerank = time.perf_counter()
             reranker = HuggingFaceReranker()
             top_chunks = reranker.rerank(query_in.message, combined_hits, top_k=5)
+            rerank_duration = (time.perf_counter() - start_rerank) * 1000.0
+            logger.info(f"PERF: Reranking took {rerank_duration:.3f}ms")
             
             # Automatically fetch and append any image chunks from the referenced documents to guarantee the LLM can reference visual assets.
             try:
