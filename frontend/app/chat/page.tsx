@@ -680,7 +680,7 @@ export default function ChatDashboard() {
                     </div>
                     <button
                       onClick={(e) => handleDeleteThread(t.id, e)}
-                      className="opacity-0 group-hover:opacity-100 hover:text-rose-400 p-0.5 text-zinc-500 transition-opacity cursor-pointer"
+                      className="opacity-100 lg:opacity-0 lg:group-hover:opacity-100 hover:text-rose-400 p-0.5 text-zinc-500 transition-opacity cursor-pointer"
                     >
                       <Trash2 className="h-3.5 w-3.5" />
                     </button>
