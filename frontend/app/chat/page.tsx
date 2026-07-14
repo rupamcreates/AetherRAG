@@ -584,23 +584,27 @@ export default function ChatDashboard() {
   return (
     <div className="flex h-screen w-screen bg-zinc-950 text-zinc-100 font-sans overflow-hidden">
       {/* Mobile Sidebar Hamburger Toggle */}
-      <div className="absolute top-4 left-4 z-40 lg:hidden">
-        <button
-          onClick={() => setMobileSidebarOpen(!mobileSidebarOpen)}
-          className="flex h-10 w-10 items-center justify-center rounded-xl bg-zinc-900 border border-zinc-800 text-zinc-200 cursor-pointer"
-        >
-          {mobileSidebarOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
-        </button>
-      </div>
+      {!mobileSidebarOpen && (
+        <div className="absolute top-4 left-4 z-40 lg:hidden">
+          <button
+            onClick={() => setMobileSidebarOpen(true)}
+            className="flex h-10 w-10 items-center justify-center rounded-xl bg-zinc-900 border border-zinc-800 text-zinc-200 cursor-pointer"
+          >
+            <Menu className="h-5 w-5" />
+          </button>
+        </div>
+      )}
 
       {/* Sidebar Panel */}
       <aside
         className={`fixed inset-y-0 left-0 z-30 flex flex-col bg-zinc-900/90 backdrop-blur-md transition-all duration-300 ease-in-out ${
-          isSidebarOpen
-            ? "w-80 opacity-100 translate-x-0 lg:static border-r border-zinc-800"
-            : "w-0 opacity-0 -translate-x-full lg:static pointer-events-none"
-        } ${
-          mobileSidebarOpen ? "translate-x-0 w-80 opacity-100 border-r border-zinc-800" : ""
+          mobileSidebarOpen 
+            ? "w-80 opacity-100 translate-x-0 border-r border-zinc-800" 
+            : "w-0 opacity-0 -translate-x-full pointer-events-none"
+        } lg:static lg:translate-x-0 lg:pointer-events-auto ${
+          isSidebarOpen 
+            ? "lg:w-80 lg:opacity-100 lg:border-r lg:border-zinc-800" 
+            : "lg:w-0 lg:opacity-0 lg:pointer-events-none"
         }`}
       >
         {/* Sidebar Header */}
@@ -611,7 +615,15 @@ export default function ChatDashboard() {
             </div>
             <span className="font-bold text-zinc-100 text-lg">AetherRAG</span>
           </div>
-          <UserButton />
+          <div className="flex items-center gap-2">
+            <UserButton />
+            <button
+              onClick={() => setMobileSidebarOpen(false)}
+              className="lg:hidden flex h-8 w-8 items-center justify-center rounded-lg border border-zinc-800 bg-zinc-900 text-zinc-400 hover:text-white cursor-pointer"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          </div>
         </div>
 
         {/* Sidebar Scrollable Section */}
