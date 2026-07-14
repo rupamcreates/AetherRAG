@@ -6,7 +6,7 @@ export default async function Home() {
   const { userId } = await auth();
 
   return (
-    <div className="flex min-h-screen flex-col bg-zinc-950 text-zinc-100 font-sans selection:bg-indigo-500 selection:text-white overflow-x-hidden">
+    <div className="flex min-h-screen flex-col bg-zinc-950 text-zinc-100 font-sans selection:bg-indigo-500 selection:text-white overflow-x-hidden relative">
       {/* Background Decorative Gradients */}
       <div className="absolute inset-0 -z-10 h-full w-full bg-[linear-gradient(to_right,#1f1f23_1px,transparent_1px),linear-gradient(to_bottom,#1f1f23_1px,transparent_1px)] bg-[size:4rem_4rem] [mask-image:radial-gradient(ellipse_60%_50%_at_50%_0%,#000_70%,transparent_100%)] opacity-35" />
       <div className="absolute top-0 right-1/4 -z-10 h-[400px] w-[600px] rounded-full bg-indigo-600/10 blur-[120px] pointer-events-none" />
